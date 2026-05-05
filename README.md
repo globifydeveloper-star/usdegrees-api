@@ -1,8 +1,8 @@
 | Branch | Purpose |
 |--------|---------|
 | `develop` | Active development — all feature work happens here |
-| `test` | Staging environment — merged from develop. |
-| `main` | Production — merged from test only after passing QA. |
+| `test`    | Staging environment — merged from develop. |
+| `main`    | Production — merged from test only after passing QA. |
 
 **Rules:**
 - Never push directly to `test` or `main`
