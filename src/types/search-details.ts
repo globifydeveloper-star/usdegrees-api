@@ -14,8 +14,21 @@ export interface Course {
 }
 
 export interface SearchResult {
-  title: string;
-  school_name: string;
+  program_id: number;
+  program_title: string;
+  cip_code: string;
   credential_title: string;
-  state_code: string;
+  credential_level: number | null;
+  school_type: string | null;
+  school_name: string;
+  city: string | null;
+  state: string | null;
+  admission_rate: number | null;   // LEFT JOIN
+  emp_factor: number | null;       // LEFT JOIN
+  earnings_year_5: number | null;  // LEFT JOIN
+}
+export interface SearchQueryParams {
+  credential_title?: string;
+  state?: string;
+  title?: string;
 }
