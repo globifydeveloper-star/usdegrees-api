@@ -5,6 +5,11 @@ import morgan from 'morgan'
 
 export const app = express()
 
+app.use((req, res, next) => {
+  console.log("➡️ Incoming:", req.method, req.url);
+  next();
+});
+
 app.use(helmet())
 app.use(cors({ origin: process.env.FRONTEND_URL }))
 app.use(morgan('dev'))
