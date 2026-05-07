@@ -7,12 +7,12 @@ import statesRoute from "./routes/states";
 import credentialsRoute from "./routes/credentials";
 import coursesRoute from "./routes/courses";
 import searchRoute from "./routes/search";
-
+import overviewDetails from "./routes/overviewDetails";
 
 
 
 const PORT = process.env.PORT || 8000;
-console.log("🔥 SERVER.TS EXECUTED");
+console.log("SERVER.TS EXECUTED");
 
 // ✅ REGISTER ROUTES HERE
 app.get("/debug", (req, res) => {
@@ -24,6 +24,7 @@ app.use("/states", verifyToken,statesRoute);
 app.use("/credentials", verifyToken,credentialsRoute);
 app.use("/courses", verifyToken,coursesRoute);
 app.use("/search", verifyToken, searchRoute);
+app.use('/college-overview', overviewDetails);
 app.get("/check", (req, res) => {
   console.log("HEADERS:", req.headers);
   res.json({ status: "ok", headers: req.headers });
