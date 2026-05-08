@@ -8,6 +8,8 @@ import credentialsRoute from "./routes/credentials";
 import coursesRoute from "./routes/courses";
 import searchRoute from "./routes/search";
 import overviewDetails from "./routes/overviewDetails";
+import outcomes from "./routes/outcomes";
+import tuitionRoute from "./routes/tuition";
 
 
 
@@ -24,7 +26,9 @@ app.use("/states", verifyToken,statesRoute);
 app.use("/credentials", verifyToken,credentialsRoute);
 app.use("/courses", verifyToken,coursesRoute);
 app.use("/search", verifyToken, searchRoute);
-app.use('/college-overview', overviewDetails);
+app.use('/overview',verifyToken, overviewDetails);
+app.use('/outcomes', verifyToken, outcomes);
+app.use('/tuition', verifyToken, tuitionRoute);
 app.get("/check", (req, res) => {
   console.log("HEADERS:", req.headers);
   res.json({ status: "ok", headers: req.headers });

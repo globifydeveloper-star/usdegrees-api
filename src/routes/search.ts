@@ -51,51 +51,58 @@ router.get("/", async (req: Request, res: Response) => {
   // DISTINCT prevents duplicates when the joined tables have multiple rows
   // per (unitid, cip_code) pair.
   // ---------------------------------------------------------------------------
-  let sql = `
-    SELECT DISTINCT
-      -- programs
-      p.title                     AS program_title,
-      p.cip_code                  AS cip_code,
-      p.credential_title          AS credential_title,
-      p.credential_level          AS credential_level,
-      p.school_type               AS school_type,
+ let sql = `
+  SELECT DISTINCT
+    -- programs
+    p.title                     AS program_title,
+    p.cip_code                  AS cip_code,
+    p.credential_title          AS credential_title,
+    p.credential_level          AS credential_level,
+    p.school_type               AS school_type,
 
-      -- schools
-      s.name                      AS school_name,
-      s.city                      AS city,
-      s.state                     AS state,
-      s.unitid                    AS unitid,
+    -- schools
+    s.name                      AS school_name,
+    s.city                      AS city,
+    s.state                     AS state,
+    s.unitid                    AS unitid,
 
-      -- admissions (nullable)
-      ad.admission_rate           AS admission_rate,
+    -- admissions (nullable)
+    ad.admission_rate           AS admission_rate,
 
-      -- completion (nullable)
-      co.emp_factor               AS emp_factor,
+    -- completion (nullable)
+    co.emp_factor               AS emp_factor,
 
-      -- earnings (nullable)
-      ec.year_5                   AS earnings_year_5
+    -- earnings (nullable)
+    ec.year_5                   AS earnings_year_5,
 
-    FROM programs p
+    -- roi (nullable)
+    roi.roi_20yr               AS roi_20yr
 
-    /* Every program must belong to a known school */
-    JOIN schools s
-      ON p.unitid = s.unitid
+  FROM programs p
 
-    /* Admission data may not exist for every school */
-    LEFT JOIN admissions ad
-      ON p.unitid = ad.unitid
+  /* Every program must belong to a known school */
+  JOIN schools s
+    ON p.unitid = s.unitid
 
-    /* Completion data keyed by school + program (cip_code) */
-    LEFT JOIN completion co
-      ON p.unitid   = co.unitid
+  /* Admission data may not exist for every school */
+  LEFT JOIN admissions ad
+    ON p.unitid = ad.unitid
 
-    /* Earnings data keyed by school + program (cip_code) */
-    LEFT JOIN earnings_against_courses ec
-      ON p.unitid   = ec.unitid
-     AND p.cip_code = ec.cip_code
+  /* Completion data keyed by school + program (cip_code) */
+  LEFT JOIN completion co
+    ON p.unitid = co.unitid
 
-    WHERE 1=1
-  `;
+  /* Earnings data keyed by school + program (cip_code) */
+  LEFT JOIN earnings_against_courses ec
+    ON p.unitid   = ec.unitid
+   AND p.cip_code = ec.cip_code
+
+  /* ROI data keyed by school + program (cip_code) */
+  LEFT JOIN roi
+    ON p.unitid   = roi.unitid
+    /* AND p.credential_level = roi.credential_level */
+  WHERE 1=1
+`;
 
   // ---------------------------------------------------------------------------
   // Dynamic filters — parameterized to prevent SQL injection
@@ -122,7 +129,7 @@ router.get("/", async (req: Request, res: Response) => {
   // Ordering & pagination
   // Results ordered alphabetically by program title; hard-capped at 50 rows.
   // ---------------------------------------------------------------------------
-  sql += ` ORDER BY p.title ASC LIMIT 10`;
+  sql += ` ORDER BY p.title ASC LIMIT 50`;
 
   // ---------------------------------------------------------------------------
   // Execute
