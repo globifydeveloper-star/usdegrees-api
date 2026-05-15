@@ -34,7 +34,7 @@ const router = Router();
  *  - title             case-insensitive partial match on programs.title
  */
 router.get("/", async (req: Request, res: Response) => {
-  const { credential_title, state, title } = req.query as SearchQueryParams;
+  const { credential_title, state, title, school_type } = req.query as any;
 
   // Collected bind parameters (positional $1, $2, …)
   const params: (string | number)[] = [];
@@ -76,7 +76,7 @@ router.get("/", async (req: Request, res: Response) => {
     ec.year_5                   AS earnings_year_5,
 
     -- roi (nullable)
-    roi.roi_20yr               AS roi_20yr
+    roi_data.roi_20yr               AS roi_20yr
 
   FROM programs p
 
@@ -98,9 +98,16 @@ router.get("/", async (req: Request, res: Response) => {
    AND p.cip_code = ec.cip_code
 
   /* ROI data keyed by school + program (cip_code) */
-  LEFT JOIN roi
-    ON p.unitid   = roi.unitid
-    /* AND p.credential_level = roi.credential_level */
+  LEFT JOIN LATERAL(
+    SELECT roi_20yr,
+    FROM roi
+    WHERE unitid = p.unitid 
+    ORDER BY CASE
+    WHEN credential_level = p.credential_level THEN 0
+    ELSE 1
+    END
+    LIMIT 1
+  ) roi_data ON TRUE
   WHERE 1=1
 `;
 
@@ -116,6 +123,11 @@ router.get("/", async (req: Request, res: Response) => {
   if (state) {
     params.push(state);
     sql += ` AND s.state = $${params.length}`;
+  }
+
+  if (school_type) {
+    params.push(`%${school_type}%`);
+    sql += ` AND s.school_type LIKE $${params.length}`;
   }
 
   if (title) {
