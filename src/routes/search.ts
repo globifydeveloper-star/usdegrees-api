@@ -2,10 +2,6 @@ import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { SearchQueryParams, SearchResult } from "../types/search-details";
 
-// ---------------------------------------------------------------------------
-// Types & Interfaces
-// ---------------------------------------------------------------------------
-
 /**
  * Shape of each row returned by the search query.
  * Nullable fields come from LEFT JOINs and may be absent for some programs.
@@ -14,7 +10,6 @@ import { SearchQueryParams, SearchResult } from "../types/search-details";
 /**
  * Accepted query-string parameters for the search endpoint.
  */
-
 
 // ---------------------------------------------------------------------------
 // Router
@@ -34,7 +29,7 @@ const router = Router();
  *  - title             case-insensitive partial match on programs.title
  */
 router.get("/", async (req: Request, res: Response) => {
-  const { credential_title, state, title, school_type } = req.query as any;
+  const { credential_title, state, title } = req.query as SearchQueryParams;
 
   // Collected bind parameters (positional $1, $2, …)
   const params: (string | number)[] = [];
@@ -51,65 +46,51 @@ router.get("/", async (req: Request, res: Response) => {
   // DISTINCT prevents duplicates when the joined tables have multiple rows
   // per (unitid, cip_code) pair.
   // ---------------------------------------------------------------------------
- let sql = `
-  SELECT DISTINCT
-    -- programs
-    p.title                     AS program_title,
-    p.cip_code                  AS cip_code,
-    p.credential_title          AS credential_title,
-    p.credential_level          AS credential_level,
-    p.school_type               AS school_type,
+  let sql = `
+    SELECT DISTINCT
+      -- programs
+      p.title                     AS program_title,
+      p.cip_code                  AS cip_code,
+      p.credential_title          AS credential_title,
+      p.credential_level          AS credential_level,
+      p.school_type               AS school_type,
 
-    -- schools
-    s.name                      AS school_name,
-    s.city                      AS city,
-    s.state                     AS state,
-    s.unitid                    AS unitid,
+      -- schools
+      s.name                      AS school_name,
+      s.city                      AS city,
+      s.state                     AS state,
+      s.unitid                    AS unitid,
 
-    -- admissions (nullable)
-    ad.admission_rate           AS admission_rate,
+      -- admissions (nullable)
+      ad.admission_rate           AS admission_rate,
 
-    -- completion (nullable)
-    co.emp_factor               AS emp_factor,
+      -- completion (nullable)
+      co.emp_factor               AS emp_factor,
 
-    -- earnings (nullable)
-    ec.year_5                   AS earnings_year_5,
+      -- earnings (nullable)
+      ec.year_5                   AS earnings_year_5
 
-    -- roi (nullable)
-    roi_data.roi_20yr               AS roi_20yr
+    FROM programs p
 
-  FROM programs p
+    /* Every program must belong to a known school */
+    JOIN schools s
+      ON p.unitid = s.unitid
 
-  /* Every program must belong to a known school */
-  JOIN schools s
-    ON p.unitid = s.unitid
+    /* Admission data may not exist for every school */
+    LEFT JOIN admissions ad
+      ON p.unitid = ad.unitid
 
-  /* Admission data may not exist for every school */
-  LEFT JOIN admissions ad
-    ON p.unitid = ad.unitid
+    /* Completion data keyed by school + program (cip_code) */
+    LEFT JOIN completion co
+      ON p.unitid   = co.unitid
 
-  /* Completion data keyed by school + program (cip_code) */
-  LEFT JOIN completion co
-    ON p.unitid = co.unitid
+    /* Earnings data keyed by school + program (cip_code) */
+    LEFT JOIN earnings_against_courses ec
+      ON p.unitid   = ec.unitid
+     AND p.cip_code = ec.cip_code
 
-  /* Earnings data keyed by school + program (cip_code) */
-  LEFT JOIN earnings_against_courses ec
-    ON p.unitid   = ec.unitid
-   AND p.cip_code = ec.cip_code
-
-  /* ROI data keyed by school + program (cip_code) */
-  LEFT JOIN LATERAL(
-    SELECT roi_20yr,
-    FROM roi
-    WHERE unitid = p.unitid 
-    ORDER BY CASE
-    WHEN credential_level = p.credential_level THEN 0
-    ELSE 1
-    END
-    LIMIT 1
-  ) roi_data ON TRUE
-  WHERE 1=1
-`;
+    WHERE 1=1
+  `;
 
   // ---------------------------------------------------------------------------
   // Dynamic filters — parameterized to prevent SQL injection
@@ -125,11 +106,6 @@ router.get("/", async (req: Request, res: Response) => {
     sql += ` AND s.state = $${params.length}`;
   }
 
-  if (school_type) {
-    params.push(`%${school_type}%`);
-    sql += ` AND s.school_type LIKE $${params.length}`;
-  }
-
   if (title) {
     // Wrap the value so LIKE matching works; LOWER() on both sides for
     // case-insensitive search without requiring a case-insensitive collation.
@@ -141,7 +117,7 @@ router.get("/", async (req: Request, res: Response) => {
   // Ordering & pagination
   // Results ordered alphabetically by program title; hard-capped at 50 rows.
   // ---------------------------------------------------------------------------
-  sql += ` ORDER BY p.title ASC LIMIT 50`;
+  sql += ` ORDER BY p.title ASC LIMIT 10`;
 
   // ---------------------------------------------------------------------------
   // Execute
