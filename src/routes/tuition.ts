@@ -2,82 +2,22 @@
  * tuition.ts
  * Express Router: GET /tuition/:unitid
  *
- * Returns aggregated tuition, housing, expenses, financial aid,
- * and repayment data for a given college (unitid).
+ * Returns aggregated tuition, housing, expenses, and financial aid
+ * data for a given college (unitid). Includes net price depending on
+ * school control (public vs private).
  *
  * Tables used:
  *   costs     — tuition, books, room & board, living expenses
  *   aid       — financial aid percentages and loan stats
- *   repayment — 1yr / 3yr repayment rates by completion status
+ *   programs  — school type
+ *   net_price_public_income  — public school net prices
+ *   net_price_private_income — private school net prices
  */
 
 import { Router, Request, Response } from "express";
 import { QueryResult } from "pg";
 import pool from "../db/client";
-import { ApiError } from "../types/tuition";
-
-// ─────────────────────────────────────────────
-// Types & Interfaces
-// ─────────────────────────────────────────────
-
-/** Raw row returned by the JOIN query */
-interface TuitionRawRow {
-  // costs
-  tuition_in_state: number | null;
-  tuition_out_state: number | null;
-  booksupply: number | null;
-  roomboard_oncampus: number | null;
-  roomboard_offcampus: number | null;
-  otherexpense_oncampus: number | null;
-  otherexpense_offcampus: number | null;
-  otherexpense_withfamily: number | null;
-  // aid
-  aid_percentage: number | null;
-  students_with_any_loan: number | null;
-  // repayment
-  all_borrowers_3yr: number | null;
-  graduates_3yr: number | null;
-  non_completers_3yr: number | null;
-  yr1_overall: number | null;
-  yr3_overall: number | null;
-  yr3_completers: number | null;
-  yr3_noncompleters: number | null;
-}
-
-/** Shaped API response */
-export interface TuitionResponse {
-  unitid: number;
-  tuition: {
-    tuition_in_state: number | null;
-    tuition_out_state: number | null;
-    booksupply: number | null;
-  };
-  housing: {
-    roomboard_oncampus: number | null;
-    roomboard_offcampus: number | null;
-  };
-  expenses: {
-    otherexpense_oncampus: number | null;
-    otherexpense_offcampus: number | null;
-    otherexpense_withfamily: number | null;
-  };
-  financial_aid: {
-    aid_percentage: number | null;
-    students_with_any_loan: number | null;
-  };
-  repayment: {
-    all_borrowers_3yr: number | null;
-    graduates_3yr: number | null;
-    non_completers_3yr: number | null;
-    yr1_overall: number | null;
-    yr3_overall: number | null;
-    yr3_completers: number | null;
-    yr3_noncompleters: number | null;
-  };
-}
-
-/** Standard API error envelope */
-
+import { ApiError, TuitionRawRow, TuitionResponse } from "../types/tuition";
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -119,14 +59,13 @@ function shapeResponse(unitid: number, row: TuitionRawRow): TuitionResponse {
       aid_percentage: toNum(row.aid_percentage),
       students_with_any_loan: toNum(row.students_with_any_loan),
     },
-    repayment: {
-      all_borrowers_3yr: toNum(row.all_borrowers_3yr),
-      graduates_3yr: toNum(row.graduates_3yr),
-      non_completers_3yr: toNum(row.non_completers_3yr),
-      yr1_overall: toNum(row.yr1_overall),
-      yr3_overall: toNum(row.yr3_overall),
-      yr3_completers: toNum(row.yr3_completers),
-      yr3_noncompleters: toNum(row.yr3_noncompleters),
+    school_type: row.school_type,
+    net_price: {
+      income_0_30000: toNum(row.income_0_30000),
+      income_30001_48000: toNum(row.income_30001_48000),
+      income_48001_75000: toNum(row.income_48001_75000),
+      income_75001_110000: toNum(row.income_75001_110000),
+      income_110001_plus: toNum(row.income_110001_plus),
     },
   };
 }
@@ -136,7 +75,7 @@ function shapeResponse(unitid: number, row: TuitionRawRow): TuitionResponse {
 // ─────────────────────────────────────────────
 
 /**
- * Single-pass JOIN across costs, aid, and repayment.
+ * Single-pass JOIN across costs and aid.
  *
  * Design decisions:
  *  - costs is the LEFT anchor (most colleges will have cost data)
@@ -167,14 +106,38 @@ const TUITION_QUERY = `
     a.aid_percentage,
     a.students_with_any_loan,
 
-    -- ── Repayment ─────────────────────────────────────────
-    r.all_borrowers_3yr,
-    r.graduates_3yr,
-    r.non_completers_3yr,
-    r.yr1_overall,
-    r.yr3_overall,
-    r.yr3_completers,
-    r.yr3_noncompleters
+    -- ── Net Price & School Type ───────────────────────────
+    p.school_type,
+    
+    CASE 
+      WHEN p.school_type ILIKE '%Public%' THEN nppu.income_0_30000 
+      WHEN p.school_type ILIKE '%Private%' THEN nppr.income_0_30000
+      ELSE COALESCE(nppu.income_0_30000, nppr.income_0_30000)
+    END AS income_0_30000,
+    
+    CASE 
+      WHEN p.school_type ILIKE '%Public%' THEN nppu.income_30001_48000 
+      WHEN p.school_type ILIKE '%Private%' THEN nppr.income_30001_48000
+      ELSE COALESCE(nppu.income_30001_48000, nppr.income_30001_48000)
+    END AS income_30001_48000,
+
+    CASE 
+      WHEN p.school_type ILIKE '%Public%' THEN nppu.income_48001_75000 
+      WHEN p.school_type ILIKE '%Private%' THEN nppr.income_48001_75000
+      ELSE COALESCE(nppu.income_48001_75000, nppr.income_48001_75000)
+    END AS income_48001_75000,
+
+    CASE 
+      WHEN p.school_type ILIKE '%Public%' THEN nppu.income_75001_110000 
+      WHEN p.school_type ILIKE '%Private%' THEN nppr.income_75001_110000
+      ELSE COALESCE(nppu.income_75001_110000, nppr.income_75001_110000)
+    END AS income_75001_110000,
+
+    CASE 
+      WHEN p.school_type ILIKE '%Public%' THEN nppu.income_110001_plus 
+      WHEN p.school_type ILIKE '%Private%' THEN nppr.income_110001_plus
+      ELSE COALESCE(nppu.income_110001_plus, nppr.income_110001_plus)
+    END AS income_110001_plus
 
   FROM (
     -- Subquery prevents duplicate cost rows when the costs table
@@ -196,30 +159,48 @@ const TUITION_QUERY = `
     LIMIT 1
   ) a ON TRUE
 
-  -- Repayment data: same pattern — LEFT JOIN + LATERAL LIMIT 1.
+  -- Programs data for school type
   LEFT JOIN LATERAL (
-    SELECT
-      all_borrowers_3yr,
-      graduates_3yr,
-      non_completers_3yr,
-      yr1_overall,
-      yr3_overall,
-      yr3_completers,
-      yr3_noncompleters
-    FROM repayment
+    SELECT school_type
+    FROM programs
     WHERE unitid = c.unitid
     LIMIT 1
-  ) r ON TRUE
+  ) p ON TRUE
+
+  -- Public net price data
+  LEFT JOIN LATERAL (
+    SELECT
+      income_0_30000,
+      income_30001_48000,
+      income_48001_75000,
+      income_75001_110000,
+      income_110001_plus
+    FROM net_price_public_income
+    WHERE unitid = c.unitid
+    LIMIT 1
+  ) nppu ON TRUE
+
+  -- Private net price data
+  LEFT JOIN LATERAL (
+    SELECT
+      income_0_30000,
+      income_30001_48000,
+      income_48001_75000,
+      income_75001_110000,
+      income_110001_plus
+    FROM net_price_private_income
+    WHERE unitid = c.unitid
+    LIMIT 1
+  ) nppr ON TRUE
 `;
 
 /*
  * ─── NOTE on LATERAL vs plain LEFT JOIN ──────────────────────────────────────
  *
- * If your aid / repayment tables already have a unique constraint on
+ * If your aid table already has a unique constraint on
  * (unitid) — i.e. only one row per college — you can simplify to:
  *
- *   LEFT JOIN aid       a ON a.unitid = c.unitid
- *   LEFT JOIN repayment r ON r.unitid = c.unitid
+ *   LEFT JOIN aid a ON a.unitid = c.unitid
  *
  * Use LATERAL when you need per-row ORDER BY + LIMIT to avoid duplicates.
  * ─────────────────────────────────────────────────────────────────────────────
@@ -257,46 +238,46 @@ const router = Router();
 router.get(
   "/:unitid",
   async (req: Request<{ unitid: string }>, res: Response) => {
-      // ── 1. Validate & parse unitid ─────────────────────────────
-      const raw = req.params.unitid;
-      const unitid = parseInt(raw, 10);
+    // ── 1. Validate & parse unitid ─────────────────────────────
+    const raw = req.params.unitid;
+    const unitid = parseInt(raw, 10);
 
-      if (isNaN(unitid) || unitid <= 0) {
-        const err: ApiError = {
-          error: "INVALID_UNITID",
-          message: `'${raw}' is not a valid unitid. Expected a positive integer.`,
-        };
-        return res.status(400).json(err);
-      }
-
-      // ── 2. Query ───────────────────────────────────────────────
-      let result: QueryResult<TuitionRawRow>;
-      try {
-        result = await pool.query<TuitionRawRow>(TUITION_QUERY, [unitid]);
-      } catch (dbErr: unknown) {
-        console.error("[tuition] DB error for unitid=%d:", unitid, dbErr);
-        const err: ApiError = {
-          error: "DATABASE_ERROR",
-          message: "An internal database error occurred. Please try again.",
-          unitid,
-        };
-        return res.status(500).json(err);
-      }
-
-      // ── 3. 404 guard ───────────────────────────────────────────
-      if (result.rowCount === 0) {
-        const err: ApiError = {
-          error: "NOT_FOUND",
-          message: `No tuition data found for unitid ${unitid}.`,
-          unitid,
-        };
-        return res.status(404).json(err);
-      }
-
-      // ── 4. Shape & return ──────────────────────────────────────
-      const payload = shapeResponse(unitid, result.rows[0]);
-      return res.status(200).json(payload);
+    if (isNaN(unitid) || unitid <= 0) {
+      const err: ApiError = {
+        error: "INVALID_UNITID",
+        message: `'${raw}' is not a valid unitid. Expected a positive integer.`,
+      };
+      return res.status(400).json(err);
     }
-  );
+
+    // ── 2. Query ───────────────────────────────────────────────
+    let result: QueryResult<TuitionRawRow>;
+    try {
+      result = await pool.query<TuitionRawRow>(TUITION_QUERY, [unitid]);
+    } catch (dbErr: unknown) {
+      console.error("[tuition] DB error for unitid=%d:", unitid, dbErr);
+      const err: ApiError = {
+        error: "DATABASE_ERROR",
+        message: "An internal database error occurred. Please try again.",
+        unitid,
+      };
+      return res.status(500).json(err);
+    }
+
+    // ── 3. 404 guard ───────────────────────────────────────────
+    if (result.rowCount === 0) {
+      const err: ApiError = {
+        error: "NOT_FOUND",
+        message: `No tuition data found for unitid ${unitid}.`,
+        unitid,
+      };
+      return res.status(404).json(err);
+    }
+
+    // ── 4. Shape & return ──────────────────────────────────────
+    const payload = shapeResponse(unitid, result.rows[0]);
+    return res.status(200).json(payload);
+  },
+);
 
 export default router;
