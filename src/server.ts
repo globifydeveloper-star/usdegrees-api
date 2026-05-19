@@ -1,18 +1,20 @@
-import 'dotenv/config'
+import "dotenv/config";
 import jwt from "jsonwebtoken";
-import { app } from './app'
+import { app } from "./app";
 
 import { verifyToken } from "./middleware/auth";
 import statesRoute from "./routes/states";
 import credentialsRoute from "./routes/credentials";
 import coursesRoute from "./routes/courses";
 import searchRoute from "./routes/search";
-
-
-
+import overviewDetails from "./routes/overviewDetails";
+import outcomes from "./routes/outcomes";
+import tuitionRoute from "./routes/tuition";
+import campusRoute from "./routes/campus";
+import programsRoute from "./routes/programs";
 
 const PORT = process.env.PORT || 8000;
-console.log("🔥 SERVER.TS EXECUTED");
+console.log("SERVER.TS EXECUTED");
 
 // ✅ REGISTER ROUTES HERE
 app.get("/debug", (req, res) => {
@@ -20,10 +22,15 @@ app.get("/debug", (req, res) => {
   res.send("DEBUG WORKING");
 });
 
-app.use("/states", verifyToken,statesRoute);
-app.use("/credentials", verifyToken,credentialsRoute);
-app.use("/courses", verifyToken,coursesRoute);
+app.use("/states", verifyToken, statesRoute);
+app.use("/credentials", verifyToken, credentialsRoute);
+app.use("/courses", verifyToken, coursesRoute);
 app.use("/search", verifyToken, searchRoute);
+app.use("/overview", verifyToken, overviewDetails);
+app.use("/outcomes", verifyToken, outcomes);
+app.use("/tuition", verifyToken, tuitionRoute);
+app.use("/campus", verifyToken, campusRoute);
+app.use("/programs", verifyToken, programsRoute);
 app.get("/check", (req, res) => {
   console.log("HEADERS:", req.headers);
   res.json({ status: "ok", headers: req.headers });
@@ -32,7 +39,7 @@ app.get("/get-token", (req, res) => {
   const token = jwt.sign(
     { userId: 1, role: "admin" }, // payload
     process.env.JWT_SECRET as string,
-    { expiresIn: "1h" }
+    { expiresIn: "1h" },
   );
 
   res.json({ token });
