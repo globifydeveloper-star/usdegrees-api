@@ -7,13 +7,13 @@ import { SearchQueryParams, SearchResult } from "../types/search-details";
 // ---------------------------------------------------------------------------
 
 /**
- * Shape of each row returned by the search query.
- * Nullable fields come from LEFT JOINs and may be absent for some programs.
- */
+* Shape of each row returned by the search query.
+* Nullable fields come from LEFT JOINs and may be absent for some programs.
+*/
 
 /**
- * Accepted query-string parameters for the search endpoint.
- */
+* Accepted query-string parameters for the search endpoint.
+*/
 
 
 // ---------------------------------------------------------------------------
@@ -22,17 +22,23 @@ import { SearchQueryParams, SearchResult } from "../types/search-details";
 
 const router = Router();
 
+function safeNum(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
- * GET /search
- *
- * Returns enriched program records joined across schools, admissions,
- * completion, and earnings_against_courses tables.
- *
- * Query params:
- *  - credential_title  exact match on programs.credential_title
- *  - state             exact match on schools.state
- *  - title             case-insensitive partial match on programs.title
- */
+* GET /search
+*
+* Returns enriched program records joined across schools, admissions,
+* completion, and earnings_against_courses tables.
+*
+* Query params:
+*  - credential_title  exact match on programs.credential_title
+*  - state             exact match on schools.state
+*  - title             case-insensitive partial match on programs.title
+*/
 router.get("/", async (req: Request, res: Response) => {
   const { credential_title, state, title } = req.query as SearchQueryParams;
 
@@ -51,7 +57,7 @@ router.get("/", async (req: Request, res: Response) => {
   // DISTINCT prevents duplicates when the joined tables have multiple rows
   // per (unitid, cip_code) pair.
   // ---------------------------------------------------------------------------
- let sql = `
+let sql = `
   SELECT DISTINCT
     -- programs
     p.title                     AS program_title,
@@ -76,7 +82,7 @@ router.get("/", async (req: Request, res: Response) => {
     ec.year_5                   AS earnings_year_5,
 
     -- roi (nullable)
-    roi.roi_20yr               AS roi_20yr
+    roi_data.roi_20yr          AS roi_20yr
 
   FROM programs p
 
@@ -97,10 +103,17 @@ router.get("/", async (req: Request, res: Response) => {
     ON p.unitid   = ec.unitid
    AND p.cip_code = ec.cip_code
 
-  /* ROI data keyed by school + program (cip_code) */
-  LEFT JOIN roi
-    ON p.unitid   = roi.unitid
-    /* AND p.credential_level = roi.credential_level */
+  /* ROI — exact credential_level match preferred, school-level fallback */
+  LEFT JOIN LATERAL (
+    SELECT roi_20yr
+    FROM roi
+    WHERE unitid = p.unitid
+    ORDER BY CASE
+      WHEN credential_level = p.credential_level THEN 0
+      ELSE 1
+    END
+    LIMIT 1
+  ) roi_data ON TRUE
   WHERE 1=1
 `;
 
@@ -136,7 +149,16 @@ router.get("/", async (req: Request, res: Response) => {
   // ---------------------------------------------------------------------------
   try {
     const { rows } = await pool.query<SearchResult>(sql, params);
-    res.json(rows);
+    res.json(
+      rows.map((row) => ({
+        ...row,
+        unitid: safeNum(row.unitid),
+        admission_rate: safeNum(row.admission_rate),
+        emp_factor: safeNum(row.emp_factor),
+        earnings_year_5: safeNum(row.earnings_year_5),
+        roi_20yr: safeNum(row.roi_20yr),
+      }))
+    );
   } catch (err) {
     console.error("[/search] Query error:", (err as Error).message);
     res.status(500).json({
@@ -147,3 +169,4 @@ router.get("/", async (req: Request, res: Response) => {
 });
 
 export default router;
+ 

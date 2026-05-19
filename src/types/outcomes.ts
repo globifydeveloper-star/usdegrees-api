@@ -1,0 +1,39 @@
+// ---------------------------------------------------------------------------
+// Types & Interfaces
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw flat row returned from PostgreSQL.
+ * All LEFT-JOIN fields are nullable — they may be absent for some
+ * unitid / cip_code combinations.
+ */
+export interface OutcomesRow {
+  // earnings_against_courses (program-level: unitid + cip_code)
+  year_1: number | null;
+  year_5: number | null;
+  year_10: number | null;
+
+  // completion (school-level: unitid only — no cip_code column in this table)
+  emp_factor: number | null;
+
+  // debt_income_ratio (program-level: unitid + cip_code)
+  debt_income_ratio: number | null;
+}
+
+/**
+ * Nested client-facing response shape.
+ * Mirrors the Outcomes & Careers page sections.
+ */
+export interface OutcomesResponse {
+  earnings: {
+    year_1: number | null;
+    year_5: number | null;
+    year_10: number | null;
+  };
+  completion: {
+    emp_factor: number | null;
+  };
+  debt_income_ratio: {
+    debt_income_ratio: number | null;
+  };
+}

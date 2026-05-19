@@ -1,45 +1,6 @@
 import { Router, Request, Response } from "express";
 import pool from "../db/client";
-
-// ---------------------------------------------------------------------------
-// Types & Interfaces
-// ---------------------------------------------------------------------------
-
-/**
- * Raw flat row returned from PostgreSQL.
- * All LEFT-JOIN fields are nullable — they may be absent for some
- * unitid / cip_code combinations.
- */
-interface OutcomesRow {
-  // earnings_against_courses (program-level: unitid + cip_code)
-  year_1: number | null;
-  year_5: number | null;
-  year_10: number | null;
-
-  // completion (school-level: unitid only — no cip_code column in this table)
-  emp_factor: number | null;
-
-  // debt_income_ratio (program-level: unitid + cip_code)
-  debt_income_ratio: number | null;
-}
-
-/**
- * Nested client-facing response shape.
- * Mirrors the Outcomes & Careers page sections.
- */
-export interface OutcomesResponse {
-  earnings: {
-    year_1: number | null;
-    year_5: number | null;
-    year_10: number | null;
-  };
-  completion: {
-    emp_factor: number | null;
-  };
-  debt_income_ratio: {
-    debt_income_ratio: number | null;
-  };
-}
+import { OutcomesRow, OutcomesResponse } from "../types/outcomes";
 
 // ---------------------------------------------------------------------------
 // Helper — safely coerce nullable / non-finite numeric DB values
@@ -75,14 +36,15 @@ const router = Router();
 router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
   const { unitid, cip_code } = req.params;
   const unitidRaw = Array.isArray(unitid) ? unitid[0] : unitid;
-  const cipCode   = Array.isArray(cip_code) ? cip_code[0] : cip_code;
+  const cipCode = Array.isArray(cip_code) ? cip_code[0] : cip_code;
 
   // ── Input validation ─────────────────────────────────────────────────────
   const unitidNum = parseInt(unitidRaw, 10);
   if (isNaN(unitidNum) || !cipCode?.trim()) {
     res.status(400).json({
       error: "Bad request",
-      details: "unitid must be a valid integer and cip_code must be a non-empty string.",
+      details:
+        "unitid must be a valid integer and cip_code must be a non-empty string.",
     });
     return;
   }
@@ -152,8 +114,8 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     // ── Shape nested response ─────────────────────────────────────────────
     const response: OutcomesResponse = {
       earnings: {
-        year_1:  safeNum(row.year_1),
-        year_5:  safeNum(row.year_5),
+        year_1: safeNum(row.year_1),
+        year_5: safeNum(row.year_5),
         year_10: safeNum(row.year_10),
       },
       completion: {
@@ -168,7 +130,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
   } catch (err) {
     console.error(
       `[/outcomes/${unitidNum}/${cipCode}] Query error:`,
-      (err as Error).message
+      (err as Error).message,
     );
     res.status(500).json({
       error: "Internal server error",

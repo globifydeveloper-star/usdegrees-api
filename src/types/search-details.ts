@@ -17,7 +17,7 @@ export interface SearchResult {
   program_title: string;
   cip_code: string;
   credential_title: string;
-  credential_level: string;
+  credential_level: number;
   school_type: string;
 
   school_name: string;
