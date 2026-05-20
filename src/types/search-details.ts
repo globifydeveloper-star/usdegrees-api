@@ -26,6 +26,8 @@ export interface SearchResult {
   unitid: number;
 
   admission_rate: number | null;
+  school_min_range: number | null;
+  school_max_range: number | null;
   emp_factor: number | null;
   earnings_year_5: number | null;
 
