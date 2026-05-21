@@ -31,19 +31,19 @@ app.use("/outcomes",  outcomes);
 app.use("/tuition",  tuitionRoute);
 app.use("/campus",  campusRoute);
 app.use("/programs",  programsRoute);
-app.get("/check", (req, res) => {
-  console.log("HEADERS:", req.headers);
-  res.json({ status: "ok", headers: req.headers });
-});
-app.get("/get-token", (req, res) => {
-  const token = jwt.sign(
-    { userId: 1, role: "admin" }, // payload
-    process.env.JWT_SECRET as string,
-    { expiresIn: "1h" },
-  );
+// app.get("/check", (req, res) => {
+//   console.log("HEADERS:", req.headers);
+//   res.json({ status: "ok", headers: req.headers });
+// });
+// app.get("/get-token", (req, res) => {
+//   const token = jwt.sign(
+//     { userId: 1, role: "admin" }, // payload
+//     process.env.JWT_SECRET as string,
+//     { expiresIn: "1h" },
+//   );
 
-  res.json({ token });
-});
+//   res.json({ token });
+// });
 app.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
 });
