@@ -22,15 +22,15 @@ app.get("/debug", (req, res) => {
   res.send("DEBUG WORKING");
 });
 
-app.use("/states", verifyToken, statesRoute);
-app.use("/credentials", verifyToken, credentialsRoute);
-app.use("/courses", verifyToken, coursesRoute);
-app.use("/search", verifyToken, searchRoute);
-app.use("/overview", verifyToken, overviewDetails);
-app.use("/outcomes", verifyToken, outcomes);
-app.use("/tuition", verifyToken, tuitionRoute);
-app.use("/campus", verifyToken, campusRoute);
-app.use("/programs", verifyToken, programsRoute);
+app.use("/states",  statesRoute);
+app.use("/credentials",  credentialsRoute);
+app.use("/courses",  coursesRoute);
+app.use("/search",  searchRoute);
+app.use("/overview",  overviewDetails);
+app.use("/outcomes",  outcomes);
+app.use("/tuition",  tuitionRoute);
+app.use("/campus",  campusRoute);
+app.use("/programs",  programsRoute);
 app.get("/check", (req, res) => {
   console.log("HEADERS:", req.headers);
   res.json({ status: "ok", headers: req.headers });
