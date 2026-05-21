@@ -57,7 +57,7 @@ router.get("/", async (req: Request, res: Response) => {
   // DISTINCT prevents duplicates when the joined tables have multiple rows
   // per (unitid, cip_code) pair.
   // ---------------------------------------------------------------------------
-let sql = `
+  let sql = `
   SELECT DISTINCT
     -- programs
     p.title                     AS program_title,
@@ -71,9 +71,12 @@ let sql = `
     s.city                      AS city,
     s.state                     AS state,
     s.unitid                    AS unitid,
+    s.is_active                 AS is_active,
 
     -- admissions (nullable)
     ad.admission_rate           AS admission_rate,
+    ad.school_min_range         AS school_min_range,
+    ad.school_max_range         AS school_max_range,
 
     -- completion (nullable)
     co.emp_factor               AS emp_factor,
@@ -154,6 +157,8 @@ let sql = `
         ...row,
         unitid: safeNum(row.unitid),
         admission_rate: safeNum(row.admission_rate),
+        school_min_range: safeNum(row.school_min_range),
+        school_max_range: safeNum(row.school_max_range),
         emp_factor: safeNum(row.emp_factor),
         earnings_year_5: safeNum(row.earnings_year_5),
         roi_20yr: safeNum(row.roi_20yr),
@@ -169,4 +174,3 @@ let sql = `
 });
 
 export default router;
- 
