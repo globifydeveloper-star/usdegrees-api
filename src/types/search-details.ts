@@ -24,6 +24,7 @@ export interface SearchResult {
   city: string;
   state: string;
   unitid: number;
+  is_active: boolean;
 
   admission_rate: number | null;
   school_min_range: number | null;
