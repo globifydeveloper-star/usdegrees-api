@@ -12,6 +12,7 @@ import outcomes from "./routes/outcomes";
 import tuitionRoute from "./routes/tuition";
 import campusRoute from "./routes/campus";
 import programsRoute from "./routes/programs";
+import schoolLevelSearchRouter from "./routes/schoollevelsearch";
 
 const PORT = process.env.PORT || 8000;
 console.log("SERVER.TS EXECUTED");
@@ -31,6 +32,7 @@ app.use("/outcomes",  outcomes);
 app.use("/tuition",  tuitionRoute);
 app.use("/campus",  campusRoute);
 app.use("/programs",  programsRoute);
+app.use("/schools", schoolLevelSearchRouter);
 // app.get("/check", (req, res) => {
 //   console.log("HEADERS:", req.headers);
 //   res.json({ status: "ok", headers: req.headers });
