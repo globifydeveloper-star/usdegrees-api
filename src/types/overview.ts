@@ -14,6 +14,11 @@ export interface OverviewRow {
 
   // admissions
   admission_rate: number | null;
+  sat_rw_min: number | null;
+  sat_rw_max: number | null;
+  sat_math_min: number | null;
+  sat_math_max: number | null;
+  sat_avg_overall: number | null;
 
   // students
   size: number | null;
@@ -46,6 +51,11 @@ export interface OverviewResponse {
   };
   admissions: {
     admission_rate: number | null;
+    sat_rw_min: number | null;
+    sat_rw_max: number | null;
+    sat_math_min: number | null;
+    sat_math_max: number | null;
+    sat_avg_overall: number | null;
   };
   students: {
     size: number | null;
