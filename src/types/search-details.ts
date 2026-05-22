@@ -21,8 +21,8 @@ export interface SearchResult {
   school_type: string;
 
   school_name: string;
-  city: string;
-  state: string;
+  city: string | null;
+  state: string | null;
   unitid: number;
   is_active: boolean;
 
@@ -33,9 +33,12 @@ export interface SearchResult {
   earnings_year_5: number | null;
 
   roi_20yr: number | null;
+  tuition_in_state: number | null;
 }
 export interface SearchQueryParams {
   credential_title?: string;
   state?: string;
   title?: string;
+  school_type?: string;
+  sort?: string;
 }

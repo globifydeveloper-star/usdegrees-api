@@ -11,7 +11,7 @@ app.use((req, res, next) => {
 });
 
 app.use(helmet())
-app.use(cors({ origin: process.env.FRONTEND_URL }))
+app.use(cors({ origin: process.env.ALLOWED_ORIGIN || 'http://localhost:3000' }))
 app.use(morgan('dev'))
 app.use(express.json())
 
