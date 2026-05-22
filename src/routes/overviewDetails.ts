@@ -65,6 +65,11 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
 
       -- ── Admissions ────────────────────────────────────────────────────
       ad.admission_rate           AS admission_rate,
+      ad.sat_rw_min               AS sat_rw_min,
+      ad.sat_rw_max               AS sat_rw_max,
+      ad.sat_math_min             AS sat_math_min,
+      ad.sat_math_max             AS sat_math_max,
+      ad.sat_avg_overall          AS sat_avg_overall,
 
       -- ── Students ──────────────────────────────────────────────────────
       st.size                     AS size,
@@ -149,6 +154,11 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       },
       admissions: {
         admission_rate: safeNum(row.admission_rate),
+        sat_rw_min: safeNum(row.sat_rw_min),
+        sat_rw_max: safeNum(row.sat_rw_max),
+        sat_math_min: safeNum(row.sat_math_min),
+        sat_math_max: safeNum(row.sat_math_max),
+        sat_avg_overall: safeNum(row.sat_avg_overall),
       },
       students: {
         size: safeNum(row.size),
