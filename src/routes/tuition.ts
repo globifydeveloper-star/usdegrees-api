@@ -58,6 +58,7 @@ function shapeResponse(unitid: number, row: TuitionRawRow): TuitionResponse {
     financial_aid: {
       aid_percentage: toNum(row.aid_percentage),
       students_with_any_loan: toNum(row.students_with_any_loan),
+      loan_principal: toNum(row.loan_principal),
     },
     school_type: row.school_type,
     net_price: {
@@ -105,6 +106,7 @@ const TUITION_QUERY = `
     -- ── Financial Aid ─────────────────────────────────────
     a.aid_percentage,
     a.students_with_any_loan,
+    a.loan_principal,
 
     -- ── Net Price & School Type ───────────────────────────
     p.school_type,
@@ -153,7 +155,8 @@ const TUITION_QUERY = `
   LEFT JOIN LATERAL (
     SELECT
       aid_percentage,
-      students_with_any_loan
+      students_with_any_loan,
+      loan_principal
     FROM aid
     WHERE unitid = c.unitid
     LIMIT 1

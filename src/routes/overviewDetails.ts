@@ -40,6 +40,8 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     return;
   }
 
+  const cleanCip = cipCode.replace(/\./g, "").trim().padStart(4, "0").substring(0, 4);
+
   // ── SQL ──────────────────────────────────────────────────────────────────
   //
   // Join strategy
@@ -112,7 +114,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     /* Earnings — program level: unitid + cip_code */
     LEFT JOIN earnings_against_courses ec
       ON ec.unitid   = s.unitid
-     AND ec.cip_code = $2
+     AND replace(ec.cip_code, '.', '') = $2
 
     /* Programs — needed to resolve credential_level for the roi JOIN.
        roi table has no cip_code column; its PK is (unitid, credential_level). */
@@ -132,7 +134,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     LIMIT 1
   `;
 
-  const params = [unitidNum, cipCode.trim()];
+  const params = [unitidNum, cleanCip];
 
   try {
     const { rows } = await pool.query<OverviewRow>(sql, params);

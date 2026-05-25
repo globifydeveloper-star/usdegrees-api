@@ -104,7 +104,7 @@ router.get("/", async (req: Request, res: Response) => {
   /* Earnings data keyed by school + program (cip_code) */
   LEFT JOIN earnings_against_courses ec
     ON p.unitid   = ec.unitid
-   AND p.cip_code = ec.cip_code
+   AND p.cip_code = replace(ec.cip_code, '.', '')
 
   /* ROI — exact credential_level match preferred, school-level fallback */
   LEFT JOIN LATERAL (

@@ -3,6 +3,7 @@ export interface ApiError {
   message: string;
   unitid?: number;
 }
+
 export interface TuitionRawRow {
   // costs
   tuition_in_state: number | null;
@@ -16,6 +17,7 @@ export interface TuitionRawRow {
   // aid
   aid_percentage: number | null;
   students_with_any_loan: number | null;
+  loan_principal: number | null;
   // net price
   school_type: string | null;
   income_0_30000: number | null;
@@ -45,6 +47,7 @@ export interface TuitionResponse {
   financial_aid: {
     aid_percentage: number | null;
     students_with_any_loan: number | null;
+    loan_principal: number | null;
   };
   school_type: string | null;
   net_price: {
