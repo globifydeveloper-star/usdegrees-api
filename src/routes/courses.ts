@@ -34,13 +34,22 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const { rows } = await pool.query<Course>(sql, params);
     res.json(rows);
-  } catch (err) {
-    console.error("[/courses] Error:", (err as Error).message);
-    res.status(500).json({
-      error: "Internal server error",
-      details: (err as Error).message
-    });
   }
+  catch (err: any) {
+  console.error("========== COURSES ERROR ==========");
+  console.error(err);
+  console.error("SQL:", sql);
+  console.error("PARAMS:", params);
+
+  res.status(500).json({
+    error: "Internal server error",
+    details: err?.message || String(err),
+    code: err?.code,
+    stack: process.env.NODE_ENV !== "production"
+      ? err?.stack
+      : undefined
+  });
+}
 });
 
 export default router;

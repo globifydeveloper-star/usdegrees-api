@@ -15,6 +15,7 @@ import outcomes from "./routes/outcomes";
 import tuitionRoute from "./routes/tuition";
 import campusRoute from "./routes/campus";
 import programsRoute from "./routes/programs";
+import schoolLevelSearchRouter from "./routes/schoollevelsearch";
 
 const PORT = process.env.PORT || 8000;
 console.log("SERVER.TS EXECUTED");
