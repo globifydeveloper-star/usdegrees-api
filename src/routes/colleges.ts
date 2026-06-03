@@ -3,7 +3,7 @@
  * Express Router: GET /colleges
  *
  * Returns a paginated list of all colleges with optional filtering by search term.
- * 
+ *
  * Features:
  *  - Pagination (default 20 per page)
  *  - Search filtering (by school name, city, or state)
@@ -49,44 +49,46 @@ function toStr(val: unknown): string | null {
  * GET /colleges
  * Returns paginated list of colleges with optional search filtering
  */
-router.get("/", async (req: Request, res: Response<CollegesResponse | ApiError>) => {
-  try {
-    // Extract query parameters
-    const search = toStr(req.query.search);
-    const page = Math.max(1, toNum(req.query.page) ?? 1);
-    const limit = Math.min(100, Math.max(1, toNum(req.query.limit) ?? 20));
+router.get(
+  "/",
+  async (req: Request, res: Response<CollegesResponse | ApiError>) => {
+    try {
+      // Extract query parameters
+      const search = toStr(req.query.search);
+      const page = Math.max(1, toNum(req.query.page) ?? 1);
+      const limit = Math.min(100, Math.max(1, toNum(req.query.limit) ?? 20));
 
-    const offset = (page - 1) * limit;
+      const offset = (page - 1) * limit;
 
-    // ─────────────────────────────────────────────
-    // Build dynamic WHERE clause for search
-    // ─────────────────────────────────────────────
-    let whereClause = "";
-    const params: (string | number)[] = [];
+      // ─────────────────────────────────────────────
+      // Build dynamic WHERE clause for search
+      // ─────────────────────────────────────────────
+      let whereClause = "";
+      const params: (string | number)[] = [];
 
-    if (search) {
-      const searchTerm = `%${search}%`;
-      whereClause = `
+      if (search) {
+        const searchTerm = `%${search}%`;
+        whereClause = `
         WHERE 
           LOWER(s.name) LIKE LOWER($1)
           OR LOWER(s.city) LIKE LOWER($1)
           OR LOWER(s.state) LIKE LOWER($1)
       `;
-      params.push(searchTerm);
-    }
+        params.push(searchTerm);
+      }
 
-    // ─────────────────────────────────────────────
-    // Query: Total count of matching colleges
-    // ─────────────────────────────────────────────
-    const countSql = `SELECT COUNT(*) as total FROM schools s ${whereClause}`;
-    const countResult = await pool.query(countSql, params);
-    const total = parseInt(countResult.rows[0].total, 10);
+      // ─────────────────────────────────────────────
+      // Query: Total count of matching colleges
+      // ─────────────────────────────────────────────
+      const countSql = `SELECT COUNT(*) as total FROM schools s ${whereClause}`;
+      const countResult = await pool.query(countSql, params);
+      const total = parseInt(countResult.rows[0].total, 10);
 
-    // ─────────────────────────────────────────────
-    // Query: Get paginated results
-    // ─────────────────────────────────────────────
-    const paramIndex = params.length + 1;
-    const dataSql = `
+      // ─────────────────────────────────────────────
+      // Query: Get paginated results
+      // ─────────────────────────────────────────────
+      const paramIndex = params.length + 1;
+      const dataSql = `
       SELECT
         s.unitid,
         s.name AS school_name,
@@ -107,55 +109,136 @@ router.get("/", async (req: Request, res: Response<CollegesResponse | ApiError>)
       OFFSET $${paramIndex + 1}
     `;
 
-    const dataParams = [...params, limit, offset];
-    const dataResult = await pool.query(dataSql, dataParams);
+      const dataParams = [...params, limit, offset];
+      const dataResult = await pool.query(dataSql, dataParams);
 
-    // ─────────────────────────────────────────────
-    // Format response
-    // ─────────────────────────────────────────────
-    const colleges: College[] = dataResult.rows.map((row) => ({
-      unitid: toNum(row.unitid) ?? 0,
-      school_name: toStr(row.school_name) ?? "Unknown",
-      city: toStr(row.city),
-      state: toStr(row.state),
-      school_type: toStr(row.school_type),
-      school_url: toStr(row.school_url),
-    }));
+      // ─────────────────────────────────────────────
+      // Format response
+      // ─────────────────────────────────────────────
+      const colleges: College[] = dataResult.rows.map((row) => ({
+        unitid: toNum(row.unitid) ?? 0,
+        school_name: toStr(row.school_name) ?? "Unknown",
+        city: toStr(row.city),
+        state: toStr(row.state),
+        school_type: toStr(row.school_type),
+        school_url: toStr(row.school_url),
+      }));
 
-    const hasMore = offset + colleges.length < total;
+      const hasMore = offset + colleges.length < total;
 
-    res.json({
-      data: colleges,
-      total,
-      page,
-      limit,
-      hasMore,
-    });
-  } catch (error) {
-    console.error("Error fetching colleges:", error);
-    res.status(500).json({
-      error: "Failed to fetch colleges",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-});
+      res.json({
+        data: colleges,
+        total,
+        page,
+        limit,
+        hasMore,
+      });
+    } catch (error) {
+      console.error("Error fetching colleges:", error);
+      res.status(500).json({
+        error: "Failed to fetch colleges",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+/**
+ * GET /colleges/search
+ * Search colleges by name (case-insensitive partial match)
+ *
+ * Query params:
+ *  - query: Search keyword (required) - matches against school name
+ *  - limit: Maximum results to return (default 30, max 100)
+ *
+ * Example requests:
+ *  GET /colleges/search?query=stan&limit=5       → Colleges with "stan" in name
+ *  GET /colleges/search?query=harvard              → Colleges with "harvard" in name
+ *
+ * Response: Direct array of college objects (not paginated)
+ */
+router.get(
+  "/search",
+  async (req: Request, res: Response<College[] | ApiError>) => {
+    try {
+      // Extract query parameters
+      const query = toStr(req.query.query);
+      const limit = Math.min(100, Math.max(1, toNum(req.query.limit) ?? 30));
+
+      // Validate required parameter
+      if (!query) {
+        return res.status(400).json({
+          error: "query parameter is required",
+        });
+      }
+
+      // ─────────────────────────────────────────────
+      // Query: Search colleges by school name
+      // ─────────────────────────────────────────────
+      const searchTerm = `%${query}%`;
+      const sql = `
+      SELECT
+        s.unitid,
+        s.name AS school_name,
+        s.city,
+        s.state,
+        s.school_url,
+        p.school_type
+      FROM schools s
+      LEFT JOIN LATERAL (
+        SELECT DISTINCT school_type
+        FROM programs
+        WHERE unitid = s.unitid
+        LIMIT 1
+      ) p ON TRUE
+      WHERE LOWER(s.name) LIKE LOWER($1)
+      ORDER BY s.name ASC
+      LIMIT $2
+    `;
+
+      const result = await pool.query(sql, [searchTerm, limit]);
+
+      // ─────────────────────────────────────────────
+      // Format response
+      // ─────────────────────────────────────────────
+      const colleges: College[] = result.rows.map((row) => ({
+        unitid: toNum(row.unitid) ?? 0,
+        school_name: toStr(row.school_name) ?? "Unknown",
+        city: toStr(row.city),
+        state: toStr(row.state),
+        school_type: toStr(row.school_type),
+        school_url: toStr(row.school_url),
+      }));
+
+      res.json(colleges);
+    } catch (error) {
+      console.error("Error searching colleges:", error);
+      res.status(500).json({
+        error: "Failed to search colleges",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
 
 /**
  * GET /colleges/:unitid
  * Returns details for a single college
  */
-router.get("/:unitid", async (req: Request, res: Response<College | ApiError>) => {
-  try {
-    const { unitid } = req.params;
-    const id = toNum(unitid);
+router.get(
+  "/:unitid",
+  async (req: Request, res: Response<College | ApiError>) => {
+    try {
+      const { unitid } = req.params;
+      const id = toNum(unitid);
 
-    if (!id) {
-      return res.status(400).json({
-        error: "Invalid college ID",
-      });
-    }
+      if (!id) {
+        return res.status(400).json({
+          error: "Invalid college ID",
+        });
+      }
 
-    const sql = `
+      const sql = `
       SELECT
         s.unitid,
         s.name AS school_name,
@@ -173,32 +256,33 @@ router.get("/:unitid", async (req: Request, res: Response<College | ApiError>) =
       WHERE s.unitid = $1
     `;
 
-    const result = await pool.query(sql, [id]);
+      const result = await pool.query(sql, [id]);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        error: "College not found",
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: "College not found",
+        });
+      }
+
+      const row = result.rows[0];
+      const college: College = {
+        unitid: toNum(row.unitid) ?? 0,
+        school_name: toStr(row.school_name) ?? "Unknown",
+        city: toStr(row.city),
+        state: toStr(row.state),
+        school_type: toStr(row.school_type),
+        school_url: toStr(row.school_url),
+      };
+
+      res.json(college);
+    } catch (error) {
+      console.error("Error fetching college:", error);
+      res.status(500).json({
+        error: "Failed to fetch college",
+        details: error instanceof Error ? error.message : "Unknown error",
       });
     }
-
-    const row = result.rows[0];
-    const college: College = {
-      unitid: toNum(row.unitid) ?? 0,
-      school_name: toStr(row.school_name) ?? "Unknown",
-      city: toStr(row.city),
-      state: toStr(row.state),
-      school_type: toStr(row.school_type),
-      school_url: toStr(row.school_url),
-    };
-
-    res.json(college);
-  } catch (error) {
-    console.error("Error fetching college:", error);
-    res.status(500).json({
-      error: "Failed to fetch college",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-});
+  },
+);
 
 export default router;
