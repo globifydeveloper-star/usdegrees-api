@@ -70,6 +70,7 @@ router.get("/", async (req: Request, res: Response) => {
     s.name                      AS school_name,
     s.city                      AS city,
     s.state                     AS state,
+    s.school_url                AS school_url,
     s.unitid                    AS unitid,
     s.is_active                 AS is_active,
 
