@@ -49,6 +49,8 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     return;
   }
 
+  const cleanCip = cipCode.replace(/\./g, "").trim().padStart(4, "0").substring(0, 4);
+
   // ── SQL ──────────────────────────────────────────────────────────────────
   //
   // Join strategy
@@ -88,14 +90,14 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     LEFT JOIN debt_income_ratio di
       ON  di.unitid   = ec.unitid
     WHERE ec.unitid   = $1
-      AND ec.cip_code = $2
+      AND replace(ec.cip_code, '.', '') = $2
 
     /* Safety cap — prevents duplicate rows if any joined table
        has multiple rows per (unitid, cip_code) */
     LIMIT 1
   `;
 
-  const params = [unitidNum, cipCode.trim()];
+  const params = [unitidNum, cleanCip];
 
   // ── Execute ───────────────────────────────────────────────────────────────
   try {
