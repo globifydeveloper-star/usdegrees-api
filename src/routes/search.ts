@@ -146,7 +146,7 @@ router.get("/", async (req: Request, res: Response) => {
   // Ordering & pagination
   // Results ordered alphabetically by program title; hard-capped at 50 rows.
   // ---------------------------------------------------------------------------
-  sql += ` ORDER BY p.title ASC LIMIT 50`;
+  sql += ` ORDER BY p.title ASC LIMIT 1000`;
 
   // ---------------------------------------------------------------------------
   // Execute
