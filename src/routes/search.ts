@@ -73,6 +73,7 @@ router.get("/", async (req: Request, res: Response) => {
     s.school_url                AS school_url,
     s.unitid                    AS unitid,
     s.is_active                 AS is_active,
+    s.accreditor                AS accreditor,
 
     -- admissions (nullable)
     ad.admission_rate           AS admission_rate,
