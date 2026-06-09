@@ -5,6 +5,8 @@ export interface StudentRawRow {
   demographics_men: number | null;
   demographics_women: number | null;
   student_faculty_ratio: string | null;
+  faculty_men: number | null;
+  faculty_women: number | null;
   // repayment
   all_borrowers_3yr: number | null;
   graduates_3yr: number | null;
@@ -32,6 +34,10 @@ export interface CampusStudentsResponse {
   students: {
     grad_students: number | null;
     demographics: Demographics;
+    faculty: {
+      men: number | null;
+      women: number | null;
+    };
   };
   repayment: {
     all_borrowers_3yr: number | null;

@@ -99,6 +99,10 @@ function shapeResponse(
         men: toPct(row.demographics_men),
         women: toPct(row.demographics_women),
       },
+      faculty: {
+        men: toNum(row.faculty_men),
+        women: toNum(row.faculty_women),
+      },
     },
     repayment: {
       all_borrowers_3yr: toNum(row.all_borrowers_3yr),
@@ -148,6 +152,9 @@ const CAMPUS_STUDENTS_QUERY = `
     -- formatRatio() in the application layer converts to "5:1".
     COALESCE(s.student_faculty_ratio, NULL)  AS student_faculty_ratio,
 
+    -- ── Faculty Demographics ──────────────────────────────
+    COALESCE(s.faculty_men, NULL)            AS faculty_men,
+    COALESCE(s.faculty_women, NULL)          AS faculty_women,
     -- ── Repayment ─────────────────────────────────────────
     r.all_borrowers_3yr,
     r.graduates_3yr,
