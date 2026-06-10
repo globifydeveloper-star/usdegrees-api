@@ -100,7 +100,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
 
     /* School descriptions — large text field, school level */
     LEFT JOIN school_descriptions sd
-      ON sd.unitid = s.unitid
+      ON sd.unitid::bigint = s.unitid
 
     /* Admission rate — school level */
     LEFT JOIN admissions ad
