@@ -65,6 +65,9 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       s.unitid                    AS unitid,
       s.program_count             AS program_count,
 
+      -- ── School Descriptions (large text field) ────────────────────────
+      sd.school_descriptions      AS school_descriptions,
+
       -- ── Admissions ────────────────────────────────────────────────────
       ad.admission_rate           AS admission_rate,
       ad.sat_rw_min               AS sat_rw_min,
@@ -94,6 +97,10 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       c.for_roi_data              AS for_roi_data
 
     FROM schools s
+
+    /* School descriptions — large text field, school level */
+    LEFT JOIN school_descriptions sd
+      ON sd.unitid = s.unitid
 
     /* Admission rate — school level */
     LEFT JOIN admissions ad
@@ -153,6 +160,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       school: {
         unitid: row.unitid,
         program_count: safeNum(row.program_count),
+        school_description: row.school_descriptions ?? null,
       },
       admissions: {
         admission_rate: safeNum(row.admission_rate),

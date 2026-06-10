@@ -12,6 +12,9 @@ export interface OverviewRow {
   unitid: number;
   program_count: number | null;
 
+  // school_descriptions
+  school_descriptions: string | null;
+
   // admissions
   admission_rate: number | null;
   sat_rw_min: number | null;
@@ -48,6 +51,7 @@ export interface OverviewResponse {
   school: {
     unitid: number;
     program_count: number | null;
+    school_description: string | null;
   };
   admissions: {
     admission_rate: number | null;
