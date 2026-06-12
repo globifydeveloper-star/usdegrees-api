@@ -1,0 +1,49 @@
+name: Supabase Backup to R2
+ 
+on:
+  schedule:
+    - cron: "0 2 * * *" # Daily at 2 AM UTC
+  workflow_dispatch:
+ 
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+ 
+    steps:
+      - name: Install PostgreSQL Client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+ 
+      - name: Create Backup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          FILE_NAME="supabase-$(date +%Y-%m-%d-%H-%M).dump"
+ 
+          pg_dump \
+            "$DATABASE_URL" \
+            --format=custom \
+            --no-owner \
+            --no-privileges \
+            -f "$FILE_NAME"
+ 
+          gzip "$FILE_NAME"
+ 
+      - name: Configure AWS CLI for R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        run: |
+          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+          aws configure set default.region auto
+ 
+      - name: Upload Backup to R2
+        env:
+          ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        run: |
+          aws s3 cp *.dump.gz \
+            s3://supabase-db-backups/ \
+            --endpoint-url https://${ACCOUNT_ID}.r2.cloudflarestorage.com
