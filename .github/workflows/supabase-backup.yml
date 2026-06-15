@@ -77,10 +77,11 @@ jobs:
 
           ls -lh backups/
 
-           - name: Configure AWS CLI
+      - name: Configure AWS CLI
         run: |
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+          aws configure set default.region auto
 
       - name: Verify R2 Authentication
         env:
