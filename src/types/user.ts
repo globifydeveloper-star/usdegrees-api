@@ -1,3 +1,5 @@
+import { Request } from "express";
+
 export interface User {
   id: number;
   display_name: string | null;
@@ -9,6 +11,7 @@ export interface User {
   provider_user_id: string | null;
   created_at: string;
   last_login: string | null;
+  password?: string | null;
 }
 
 export interface UserProfile {
@@ -34,3 +37,13 @@ export interface ApiError {
   error: string;
   details?: string;
 }
+
+export interface AuthRequest extends Request {
+  user?: {
+    id: number;
+    userId?: number;
+    email: string;
+    role: string;
+  };
+}
+
