@@ -1,67 +1,65 @@
 name: Supabase Backup to R2
 
 on:
-schedule:
-- cron: "0 2 * * *"
-workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
 
 jobs:
-backup:
-runs-on: ubuntu-latest
+  backup:
+    runs-on: ubuntu-latest
 
-```
-steps:
-  - name: Install PostgreSQL 17 Client
-    run: |
-      sudo apt-get update
+    steps:
+      - name: Install PostgreSQL 17 Client
+        run: |
+          sudo apt-get update
 
-      sudo install -d /usr/share/postgresql-common/pgdg
-      curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
-        sudo gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
+            sudo gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
 
-      echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
-        sudo tee /etc/apt/sources.list.d/pgdg.list
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
 
-      sudo apt-get update
-      sudo apt-get install -y postgresql-client-17
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
 
-  - name: Verify pg_dump Version
-    run: pg_dump --version
+      - name: Verify pg_dump Version
+        run: pg_dump --version
 
-  - name: Create Backup
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-    run: |
-      FILE_NAME="supabase-$(date +%Y-%m-%d-%H-%M).dump"
+      - name: Create Backup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          FILE_NAME="supabase-$(date +%Y-%m-%d-%H-%M).dump"
 
-      pg_dump \
-        "$DATABASE_URL" \
-        --format=custom \
-        --no-owner \
-        --no-privileges \
-        -f "$FILE_NAME"
+          pg_dump \
+            "$DATABASE_URL" \
+            --format=custom \
+            --no-owner \
+            --no-privileges \
+            -f "$FILE_NAME"
 
-      gzip "$FILE_NAME"
+          gzip "$FILE_NAME"
 
-  - name: Install AWS CLI
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y awscli
+      - name: Install AWS CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y awscli
 
-  - name: Configure AWS CLI for R2
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-    run: |
-      aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
-      aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
-      aws configure set default.region auto
+      - name: Configure AWS CLI for R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+          aws configure set default.region auto
 
-  - name: Upload Backup to R2
-    env:
-      ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-    run: |
-      aws s3 cp *.dump.gz \
-        s3://supabase-db-backups/ \
-        --endpoint-url https://${ACCOUNT_ID}.r2.cloudflarestorage.com
-```
+      - name: Upload Backup to R2
+        env:
+          ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        run: |
+          aws s3 cp *.dump.gz \
+            s3://supabase-db-backups/ \
+            --endpoint-url https://${ACCOUNT_ID}.r2.cloudflarestorage.com
