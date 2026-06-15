@@ -77,17 +77,24 @@ jobs:
 
           ls -lh backups/
 
-      - name: Configure AWS CLI
+           - name: Configure AWS CLI
         run: |
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+
+      - name: Verify R2 Authentication
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          aws s3api list-buckets \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 
       - name: Test R2 Bucket Access
         run: |
           aws s3api head-bucket \
             --bucket "$R2_BUCKET_NAME" \
-            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
-            --debug
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 
       - name: Upload Backup to Cloudflare R2
         run: |
