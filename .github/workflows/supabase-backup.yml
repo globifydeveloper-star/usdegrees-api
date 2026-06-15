@@ -2,64 +2,67 @@ name: Supabase Backup to R2
 
 on:
   schedule:
-    - cron: "0 2 * * *"
+    - cron: "0 2 * * *" # Daily at 02:00 UTC
   workflow_dispatch:
 
 jobs:
   backup:
     runs-on: ubuntu-latest
 
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET_NAME: supabase-db-backups
+
     steps:
       - name: Install PostgreSQL 17 Client
         run: |
           sudo apt-get update
-
-          sudo install -d /usr/share/postgresql-common/pgdg
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
-            sudo gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
-
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
-            sudo tee /etc/apt/sources.list.d/pgdg.list
-
-          sudo apt-get update
           sudo apt-get install -y postgresql-client-17
+          pg_dump --version
 
-      - name: Verify pg_dump Version
-        run: pg_dump --version
-
-      - name: Create Backup
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Install AWS CLI
         run: |
-          FILE_NAME="supabase-$(date +%Y-%m-%d-%H-%M).dump"
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+          unzip -q awscliv2.zip
+          sudo ./aws/install
+          aws --version
+
+      - name: Create Database Backup
+        run: |
+          mkdir -p backups
+
+          BACKUP_FILE="supabase-$(date +'%Y-%m-%d_%H-%M-%S').dump"
 
           pg_dump \
             "$DATABASE_URL" \
             --format=custom \
             --no-owner \
             --no-privileges \
-            -f "$FILE_NAME"
+            --verbose \
+            > "backups/$BACKUP_FILE"
 
-          gzip "$FILE_NAME"
+          gzip "backups/$BACKUP_FILE"
 
-      - name: Install AWS CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y awscli
+          echo "BACKUP_FILE=${BACKUP_FILE}.gz" >> $GITHUB_ENV
 
       - name: Configure AWS CLI for R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
-          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set default.region auto
 
-      - name: Upload Backup to R2
-        env:
-          ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      - name: Upload Backup to Cloudflare R2
         run: |
-          aws s3 cp *.dump.gz \
-            s3://supabase-db-backups/ \
-            --endpoint-url https://${ACCOUNT_ID}.r2.cloudflarestorage.com
+          aws s3 cp \
+            "backups/$BACKUP_FILE" \
+            "s3://$R2_BUCKET_NAME/$BACKUP_FILE" \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+      - name: Verify Upload
+        run: |
+          aws s3 ls \
+            "s3://$R2_BUCKET_NAME/" \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
