@@ -2,7 +2,7 @@ name: Supabase Backup to R2
 
 on:
   schedule:
-    - cron: "0 2 * * *" # Daily at 02:00 UTC
+    - cron: "0 2 * * *"
   workflow_dispatch:
 
 jobs:
@@ -19,24 +19,39 @@ jobs:
     steps:
       - name: Install PostgreSQL 17 Client
         run: |
+          set -e
+
           sudo apt-get update
           sudo apt-get install -y postgresql-common
+
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
-          pg_dump --version
 
-      - name: Install AWS CLI
+          echo "/usr/lib/postgresql/17/bin" >> $GITHUB_PATH
+
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      - name: Verify PostgreSQL Client
+        run: |
+          which pg_dump
+          pg_dump --version
+          ls -la /usr/lib/postgresql/17/bin/
+
+      - name: Verify AWS CLI
         run: |
           aws --version
 
       - name: Create Database Backup
         run: |
+          set -e
+
           mkdir -p backups
 
           BACKUP_FILE="supabase-$(date +'%Y-%m-%d_%H-%M-%S').dump"
 
-          pg_dump \
+          /usr/lib/postgresql/17/bin/pg_dump \
             "$DATABASE_URL" \
             --format=custom \
             --no-owner \
