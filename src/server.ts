@@ -17,6 +17,7 @@ import campusRoute from "./routes/campus";
 import programsRoute from "./routes/programs";
 import schoolLevelSearchRouter from "./routes/schoollevelsearch";
 import collegesRoute from "./routes/colleges";
+import compareRoute from "./routes/compare";
 import userRoute from "./routes/user";
 import authRoute from "./routes/auth";
 
@@ -39,6 +40,7 @@ app.use("/tuition", tuitionRoute);
 app.use("/campus", campusRoute);
 app.use("/programs", programsRoute);
 app.use("/colleges", collegesRoute);
+app.use("/compare", compareRoute);
 app.use("/user", userRoute);
 app.use("/auth", authRoute);
 // app.get("/check", (req, res) => {
