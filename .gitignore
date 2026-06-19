@@ -24,6 +24,15 @@ build/
 .env.production.local
 
 # ------------------------------
+# Firebase service-account credentials (NEVER commit)
+# ------------------------------
+*serviceAccount*.json
+*service-account*.json
+firebase-adminsdk*.json
+credentials/
+gcloud-key.json
+
+# ------------------------------
 # Logs
 # ------------------------------
 logs

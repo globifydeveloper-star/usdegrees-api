@@ -20,6 +20,9 @@ import collegesRoute from "./routes/colleges";
 import compareRoute from "./routes/compare";
 import userRoute from "./routes/user";
 import authRoute from "./routes/auth";
+import profileRoute, { accountRouter } from "./routes/profile";
+import savedCollegesRoute from "./routes/savedColleges";
+import degreeLevelsRoute from "./routes/degreeLevels";
 
 const PORT = process.env.PORT || 8000;
 console.log("SERVER.TS EXECUTED");
@@ -43,6 +46,10 @@ app.use("/colleges", collegesRoute);
 app.use("/compare", compareRoute);
 app.use("/user", userRoute);
 app.use("/auth", authRoute);
+app.use("/profile", profileRoute);
+app.use("/account", accountRouter);
+app.use("/saved-colleges", savedCollegesRoute);
+app.use("/degree-levels", degreeLevelsRoute);
 // app.get("/check", (req, res) => {
 //   console.log("HEADERS:", req.headers);
 //   res.json({ status: "ok", headers: req.headers });
@@ -56,7 +63,9 @@ app.use("/auth", authRoute);
 
 //   res.json({ token });
 // });
-app.get("/", (req, res) => res.json({ status: "ok", message: "API is running" }));
+app.get("/", (req, res) =>
+  res.json({ status: "ok", message: "API is running" }),
+);
 app.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
 });

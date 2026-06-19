@@ -2,6 +2,7 @@ import { Request } from "express";
 
 export interface User {
   id: number;
+  firebase_uid: string | null;
   display_name: string | null;
   email: string;
   profile_image: string | null;
@@ -9,9 +10,11 @@ export interface User {
   role: string;
   email_verified: boolean;
   provider_user_id: string | null;
+  is_active: boolean;
+  deactivated_at: string | null;
   created_at: string;
   last_login: string | null;
-  password?: string | null;
+  password_hash?: string | null;
 }
 
 export interface UserProfile {
@@ -38,12 +41,15 @@ export interface ApiError {
   details?: string;
 }
 
+/**
+ * Request carrying the authenticated Firebase UID, extracted from the
+ * app JWT `sub` claim by the verifyToken middleware.
+ */
 export interface AuthRequest extends Request {
-  user?: {
-    id: number;
-    userId?: number;
-    email: string;
-    role: string;
-  };
+  userId?: string;
 }
 
+export interface UpdateProfileBody {
+  display_name?: string;
+  profile_image?: string;
+}

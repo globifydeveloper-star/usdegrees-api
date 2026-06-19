@@ -1,192 +1,200 @@
-import { Router, Response } from "express";
-import bcryptjs from "bcryptjs";
-import jwt from "jsonwebtoken";
+import { Router, Request, Response } from "express";
+import jwt, { SignOptions } from "jsonwebtoken";
+import { DecodedIdToken } from "firebase-admin/auth";
+import { firebaseAuth } from "../config/firebase";
 import pool from "../db/client";
 import { verifyToken } from "../middleware/auth";
 import { User, UserProfile, ApiError, AuthRequest } from "../types/user";
 
 const router = Router();
 const SECRET = process.env.JWT_SECRET || "your_secret_key";
+const APP_JWT_TTL = process.env.APP_JWT_TTL || "30m";
+
+const USER_COLUMNS =
+  "id, firebase_uid, email, display_name, profile_image, role, email_verified, is_active";
 
 /**
- * Helper to generate JWT Token
+ * Map Firebase's `firebase.sign_in_provider` onto an auth_provider value the
+ * usdusers CHECK constraint accepts (google | apple | microsoft | credentials).
+ * Email/password and anything unrecognized fall back to 'credentials'.
  */
-const generateToken = (user: { id: number; email: string; role: string }): string => {
-  return jwt.sign(
-    { id: user.id, userId: user.id, email: user.email, role: user.role },
-    SECRET,
-    { expiresIn: "24h" }
-  );
-};
-
-/**
- * POST /auth/signup
- * Registers a new user with credentials
- */
-router.post("/signup", async (req: AuthRequest, res: Response<{ token: string; user: UserProfile } | ApiError>) => {
-  try {
-    const { email, password, display_name, role } = req.body;
-
-    if (!email || !password || !display_name) {
-      return res.status(400).json({ error: "Email, password, and display name are required" });
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: "Invalid email format" });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({ error: "Password must be at least 6 characters long" });
-    }
-
-    // Check if user already exists
-    const existingUser = await pool.query<User>(
-      "SELECT id FROM usdusers WHERE email = $1",
-      [email.toLowerCase().trim()]
-    );
-
-    if (existingUser.rows.length > 0) {
-      return res.status(400).json({ error: "User with this email already registered" });
-    }
-
-    // Hash password
-    const hashedPassword = await bcryptjs.hash(password, 10);
-
-    // Insert user into usdusers table
-    const result = await pool.query<User>(
-      `INSERT INTO usdusers
-         (email, display_name, password, auth_provider, role, email_verified, created_at, last_login)
-       VALUES ($1, $2, $3, 'credentials', $4, false, NOW(), NOW())
-       RETURNING id, display_name, email, role, profile_image, email_verified`,
-      [email.toLowerCase().trim(), display_name.trim(), hashedPassword, role?.toLowerCase().trim() || 'student']
-    );
-
-    const newUser = result.rows[0];
-    const token = generateToken(newUser);
-
-    res.status(201).json({
-      token,
-      user: {
-        id: newUser.id,
-        display_name: newUser.display_name,
-        email: newUser.email,
-        profile_image: newUser.profile_image,
-        role: newUser.role,
-        email_verified: newUser.email_verified,
-      },
-    });
-  } catch (error) {
-    console.error("Signup error:", error);
-    res.status(500).json({
-      error: "Signup failed",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
+function mapAuthProvider(signInProvider?: string): string {
+  switch (signInProvider) {
+    case "google.com":
+      return "google";
+    case "apple.com":
+      return "apple";
+    case "microsoft.com":
+      return "microsoft";
+    default:
+      return "credentials";
   }
-});
+}
+
+function toProfile(user: User): UserProfile {
+  return {
+    id: user.id,
+    display_name: user.display_name,
+    email: user.email,
+    profile_image: user.profile_image,
+    role: user.role,
+    email_verified: user.email_verified,
+  };
+}
 
 /**
  * POST /auth/login
- * Log in with email and password
+ * Token exchange: verifies a Firebase ID token and mints a short-lived app JWT.
+ *
+ * Body:   { idToken: string }   (Firebase ID token from the frontend)
+ * Returns: { token: string }    (app JWT, sub = Firebase UID)
+ *
+ * This is the ONLY endpoint that accepts a Firebase token. Everything else
+ * uses the app JWT via the verifyToken middleware.
  */
-router.post("/login", async (req: AuthRequest, res: Response<{ token: string; user: UserProfile } | ApiError>) => {
-  try {
-    const { email, password } = req.body;
+router.post(
+  "/login",
+  async (
+    req: Request<{}, { token: string } | ApiError, { idToken?: string }>,
+    res: Response<{ token: string } | ApiError>,
+  ) => {
+    console.log("[auth/login] hit", {
+      hasIdToken: !!req.body?.idToken,
+      from: req.ip,
+    });
+    try {
+      // req.body can be undefined in Express 5 when no JSON body is sent.
+      const idToken = req.body?.idToken;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
-    }
+      if (!idToken) {
+        console.warn("[auth/login] 400 — missing idToken in body");
+        return res.status(400).json({ error: "idToken is required" });
+      }
 
-    // Fetch user including the hashed password
-    const result = await pool.query<User>(
-      `SELECT id, display_name, email, password, role, profile_image, email_verified
-       FROM usdusers WHERE email = $1`,
-      [email.toLowerCase().trim()]
-    );
+      // Verify the Firebase token with the revoked-check enabled.
+      let decoded: DecodedIdToken;
+      try {
+        decoded = await firebaseAuth.verifyIdToken(idToken, true);
+      } catch (err) {
+        const code = (err as { code?: string })?.code ?? "unknown";
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[auth/login] 401 — verifyIdToken failed (code=${code}): ${message}`,
+        );
+        return res
+          .status(401)
+          .json({ error: "Invalid or revoked Firebase token" });
+      }
 
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: "Invalid email or password" });
-    }
+      console.log(`[auth/login] token verified for uid=${decoded.uid}`);
 
-    const user = result.rows[0];
+      const uid = decoded.uid;
+      const email = decoded.email ?? null;
+      const emailVerified = decoded.email_verified ?? false;
 
-    // If user exists but has no password (registered via social auth)
-    if (!user.password) {
-      return res.status(401).json({
-        error: "This email is registered with another authentication provider. Please log in using that provider.",
+      // Fallbacks for NOT NULL columns the token may not supply.
+      // email is NOT NULL + UNIQUE; if a token ever lacks one, key a placeholder
+      // off the uid so we never insert null or collide.
+      const emailValue = email ?? `${uid}@placeholder.firebase`;
+      const displayName =
+        decoded.name || (email ? email.split("@")[0] : null) || "New User";
+
+      // auth_provider has a CHECK constraint: google | apple | microsoft |
+      // credentials. Map Firebase's sign_in_provider onto an allowed value.
+      const authProvider = mapAuthProvider(decoded.firebase?.sign_in_provider);
+
+      // 1. Find the row by Firebase UID.
+      let result = await pool.query<User>(
+        `SELECT ${USER_COLUMNS} FROM usdusers WHERE firebase_uid = $1`,
+        [uid],
+      );
+      let user = result.rows[0];
+
+      // 2. Legacy link: migrated bcrypt users exist by email with no UID yet.
+      if (!user && email) {
+        const legacy = await pool.query<User>(
+          `UPDATE usdusers
+              SET firebase_uid = $1, last_login = NOW()
+            WHERE email = $2 AND firebase_uid IS NULL
+          RETURNING ${USER_COLUMNS}`,
+          [uid, email],
+        );
+        user = legacy.rows[0];
+      }
+
+      // 3. Reject soft-deleted accounts.
+      if (user && user.is_active === false) {
+        return res.status(403).json({ error: "This account has been deleted" });
+      }
+
+      // 4. Idempotent upsert keyed on firebase_uid: insert on first login,
+      //    otherwise mirror email/email_verified and bump last_login. Profile
+      //    fields (display_name, profile_image) are only set on insert so we
+      //    never clobber edits the user made via PATCH /profile.
+      const upserted = await pool.query<User>(
+        `INSERT INTO usdusers
+           (firebase_uid, email, display_name, profile_image, email_verified,
+            auth_provider, role, is_active, created_at, last_login)
+         VALUES ($1, $2, $3, $4, $5, $6, 'student', true, NOW(), NOW())
+         ON CONFLICT (firebase_uid) DO UPDATE SET
+           email          = EXCLUDED.email,
+           email_verified = EXCLUDED.email_verified,
+           last_login     = NOW()
+         RETURNING ${USER_COLUMNS}`,
+        [
+          uid,
+          emailValue,
+          displayName,
+          decoded.picture ?? null,
+          emailVerified,
+          authProvider,
+        ],
+      );
+      user = upserted.rows[0];
+
+      const token = jwt.sign({ sub: uid }, SECRET, {
+        expiresIn: APP_JWT_TTL,
+      } as SignOptions);
+      console.log(`[auth/login] 200 — app JWT issued for uid=${uid}`);
+      return res.json({ token });
+    } catch (error) {
+      console.error("[auth/login] 500 — unexpected error:", error);
+      return res.status(500).json({
+        error: "Login failed",
+        details: error instanceof Error ? error.message : "Unknown error",
       });
     }
-
-    // Compare passwords
-    const isMatch = await bcryptjs.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ error: "Invalid email or password" });
-    }
-
-    // Update last login
-    await pool.query("UPDATE usdusers SET last_login = NOW() WHERE id = $1", [user.id]);
-
-    const token = generateToken(user);
-
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        display_name: user.display_name,
-        email: user.email,
-        profile_image: user.profile_image,
-        role: user.role,
-        email_verified: user.email_verified,
-      },
-    });
-  } catch (error) {
-    console.error("Login error:", error);
-    res.status(500).json({
-      error: "Login failed",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-});
+  },
+);
 
 /**
  * GET /auth/me
- * Retrieves current logged-in user profile using verifyToken middleware
+ * Alias of GET /profile — returns the current user's profile from the app JWT.
+ * Kept for frontend backward-compatibility.
  */
-router.get("/me", verifyToken, async (req: AuthRequest, res: Response<UserProfile | ApiError>) => {
-  try {
-    const userId = req.user?.id || req.user?.userId;
+router.get(
+  "/me",
+  verifyToken,
+  async (req: AuthRequest, res: Response<UserProfile | ApiError>) => {
+    try {
+      const result = await pool.query<User>(
+        `SELECT ${USER_COLUMNS} FROM usdusers WHERE firebase_uid = $1`,
+        [req.userId],
+      );
 
-    if (!userId) {
-      return res.status(401).json({ error: "User unauthorized" });
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.json(toProfile(result.rows[0]));
+    } catch (error) {
+      console.error("Fetch me error:", error);
+      res.status(500).json({
+        error: "Failed to retrieve user profile",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
     }
-
-    const result = await pool.query<User>(
-      `SELECT id, display_name, email, role, profile_image, email_verified
-       FROM usdusers WHERE id = $1`,
-      [userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    const user = result.rows[0];
-
-    res.json({
-      id: user.id,
-      display_name: user.display_name,
-      email: user.email,
-      profile_image: user.profile_image,
-      role: user.role,
-      email_verified: user.email_verified,
-    });
-  } catch (error) {
-    console.error("Fetch me error:", error);
-    res.status(500).json({
-      error: "Failed to retrieve user profile",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-});
+  },
+);
 
 export default router;

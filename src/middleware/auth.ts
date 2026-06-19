@@ -1,11 +1,30 @@
-import { Request, Response, NextFunction } from "express";
+import { Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import pool from "../db/client";
+import { AuthRequest } from "../types/user";
 
 const SECRET = process.env.JWT_SECRET || "your_secret_key";
 
-export const verifyToken = (req: Request, res: Response, next: NextFunction): void => {
-  console.log("AUTH HEADER:", SECRET);
-  console.log("verifyToken hit");
+interface AppJwtPayload {
+  sub: string; // Firebase UID
+}
+
+/**
+ * Protected-route middleware.
+ *
+ * - Reads the app JWT from `Authorization: Bearer <token>`.
+ * - Verifies it with JWT_SECRET and pulls the Firebase UID from `sub`.
+ * - Rejects soft-deleted users (is_active === false) even if the JWT is still
+ *   valid, so a deleted account cannot keep using an unexpired token.
+ *
+ * Apply to every protected route — NOT to /auth/login (that takes a Firebase
+ * token, not an app JWT).
+ */
+export const verifyToken = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
   const authHeader = req.headers["authorization"];
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -15,13 +34,53 @@ export const verifyToken = (req: Request, res: Response, next: NextFunction): vo
 
   const token = authHeader.split(" ")[1];
 
+  let payload: AppJwtPayload;
   try {
-    const decoded = jwt.verify(token, SECRET);
-    (req as any).user = decoded; // attach decoded payload to request if needed
-    console.log("Token verified successfully");
+    payload = jwt.verify(token, SECRET) as AppJwtPayload;
+  } catch (err) {
+    console.warn(
+      `[verifyToken] 403 — jwt.verify failed: ${(err as Error).name}: ${(err as Error).message}`,
+    );
+    res.status(403).json({ error: "Invalid or expired token" });
+    return;
+  }
+
+  const uid = payload.sub;
+  if (!uid) {
+    console.warn("[verifyToken] 403 — token has no sub claim");
+    res.status(403).json({ error: "Invalid token payload" });
+    return;
+  }
+
+  try {
+    const result = await pool.query<{ is_active: boolean }>(
+      "SELECT is_active FROM usdusers WHERE firebase_uid = $1",
+      [uid],
+    );
+
+    if (result.rows.length === 0) {
+      console.warn(
+        `[verifyToken] 403 — no usdusers row for firebase_uid=${uid}`,
+      );
+      res
+        .status(403)
+        .json({ error: "Account is inactive or no longer exists" });
+      return;
+    }
+    if (result.rows[0].is_active === false) {
+      console.warn(
+        `[verifyToken] 403 — account inactive for firebase_uid=${uid}`,
+      );
+      res
+        .status(403)
+        .json({ error: "Account is inactive or no longer exists" });
+      return;
+    }
+
+    req.userId = uid;
     next();
   } catch (err) {
-    console.error("Token verification failed:", (err as Error).message);
-    res.status(403).json({ error: "Invalid or expired token" });
+    console.error("Auth middleware DB error:", (err as Error).message);
+    res.status(500).json({ error: "Authentication check failed" });
   }
 };
