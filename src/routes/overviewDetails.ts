@@ -29,6 +29,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
   const { unitid, cip_code } = req.params;
   const unitidRaw = Array.isArray(unitid) ? unitid[0] : unitid;
   const cipCode = Array.isArray(cip_code) ? cip_code[0] : cip_code;
+  let credentialTitle = (req.query.credential_title as string) || null;
 
   const unitidNum = parseInt(unitidRaw, 10);
   if (isNaN(unitidNum) || !cipCode?.trim()) {
@@ -40,7 +41,28 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     return;
   }
 
-  const cleanCip = cipCode.replace(/\./g, "").trim().padStart(4, "0").substring(0, 4);
+  let cleanCip = cipCode.replace(/\./g, "").trim();
+
+  if (cleanCip.toLowerCase() === "default") {
+    try {
+      const defaultProgRes = await pool.query(
+        "SELECT cip_code, credential_title FROM programs WHERE unitid = $1 LIMIT 1",
+        [unitidNum]
+      );
+      if (defaultProgRes.rows.length > 0) {
+        cleanCip = defaultProgRes.rows[0].cip_code;
+        if (!credentialTitle) {
+          credentialTitle = defaultProgRes.rows[0].credential_title;
+        }
+      } else {
+        cleanCip = "";
+      }
+    } catch (err) {
+      console.error("[overviewDetails] Error fetching default program:", err);
+    }
+  }
+
+  cleanCip = cleanCip.padStart(4, "0").substring(0, 4);
 
   // ── SQL ──────────────────────────────────────────────────────────────────
   //
@@ -52,11 +74,9 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
   // completion               → LEFT JOIN on unitid                (school-level)
   // costs                    → LEFT JOIN on unitid                (school-level)
   // earnings_against_courses → LEFT JOIN on unitid + cip_code     (program-level)
-  // programs                 → LEFT JOIN on unitid + cip_code     (to get credential_level)
+  // programs                 → LEFT JOIN LATERAL on unitid + cip_code matching credential_title preference
+  // program_descriptions     → LEFT JOIN LATERAL on unitid + cip_code matching program credential_title
   // roi                      → LEFT JOIN on unitid + credential_level
-  //                            roi has NO cip_code column — keyed by
-  //                            (unitid, credential_level) as per DB schema.
-  //                            credential_level is sourced from the programs table.
   // ─────────────────────────────────────────────────────────────────────────
 
   const sql = `
@@ -94,7 +114,13 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       r.roi_20yr                  AS roi_20yr,
 
       -- ── Costs / ROI supplementary data ────────────────────────────────
-      c.for_roi_data              AS for_roi_data
+      c.for_roi_data              AS for_roi_data,
+
+      -- ── Program Info ──────────────────────────────────────────────────
+      p.cip_code                  AS program_cip_code,
+      p.title                     AS program_title,
+      p.credential_title          AS program_credential_title,
+      pd.program_description      AS program_description
 
     FROM schools s
 
@@ -123,15 +149,32 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       ON ec.unitid   = s.unitid
      AND replace(ec.cip_code, '.', '') = $2
 
-    /* Programs — needed to resolve credential_level for the roi JOIN.
-       roi table has no cip_code column; its PK is (unitid, credential_level). */
-    LEFT JOIN programs p
-      ON p.unitid   = s.unitid
-     AND p.cip_code = $2
+    /* Programs — coordinate matching of credential level based on preference */
+    LEFT JOIN LATERAL (
+      SELECT p2.credential_level, p2.credential_title, p2.title, p2.cip_code
+      FROM programs p2
+      WHERE p2.unitid = s.unitid
+        AND p2.cip_code = $2
+      ORDER BY
+        CASE
+          WHEN $3::text IS NOT NULL AND p2.credential_title ILIKE $3 THEN 1
+          WHEN p2.credential_title ILIKE 'Bachelor%' THEN 2
+          ELSE 3
+        END ASC
+      LIMIT 1
+    ) p ON TRUE
 
-    /* ROI — joined on unitid + credential_level sourced from programs.
-       If programs has no matching row, p.credential_level is NULL and
-       this JOIN will produce no match (safe — roi columns return NULL). */
+    /* Program descriptions — match by resolved program title and credential */
+    LEFT JOIN LATERAL (
+      SELECT pd2.program_description
+      FROM program_descriptions pd2
+      WHERE pd2.unitid::bigint = s.unitid
+        AND replace(pd2.cip_code, '.', '') = $2
+        AND pd2.credential_title = p.credential_title
+      LIMIT 1
+    ) pd ON TRUE
+
+    /* ROI — joined on unitid + credential_level sourced from programs. */
     LEFT JOIN roi r
       ON r.unitid           = s.unitid
      AND r.credential_level = p.credential_level
@@ -141,7 +184,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     LIMIT 1
   `;
 
-  const params = [unitidNum, cleanCip];
+  const params = [unitidNum, cleanCip, credentialTitle];
 
   try {
     const { rows } = await pool.query<OverviewRow>(sql, params);
@@ -188,6 +231,14 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
         roi_20yr: safeNum(row.roi_20yr),
         for_roi_data: row.for_roi_data ?? null,
       },
+      program: row.program_cip_code
+        ? {
+            cip_code: row.program_cip_code,
+            title: row.program_title ?? null,
+            credential_title: row.program_credential_title ?? null,
+            program_description: row.program_description ?? null,
+          }
+        : null,
     };
 
     res.json(response);

@@ -42,6 +42,12 @@ export interface OverviewRow {
 
   // costs (used for ROI supplementary data)
   for_roi_data: Record<string, unknown> | null;
+
+  // programs & program_descriptions
+  program_cip_code: string | null;
+  program_title: string | null;
+  program_credential_title: string | null;
+  program_description: string | null;
 }
 
 /**
@@ -79,4 +85,10 @@ export interface OverviewResponse {
     roi_20yr: number | null;
     for_roi_data: Record<string, unknown> | null;
   };
+  program: {
+    cip_code: string | null;
+    title: string | null;
+    credential_title: string | null;
+    program_description: string | null;
+  } | null;
 }
