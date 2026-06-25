@@ -3,6 +3,8 @@ import cors from 'cors'
 import helmet from 'helmet'
 import morgan from 'morgan'
 
+import path from 'path'
+
 export const app = express()
 
 app.use((req, res, next) => {
@@ -31,5 +33,7 @@ app.use(cors({
 }))
 app.use(morgan('dev'))
 app.use(express.json())
+
+app.use("/public", express.static(path.join(__dirname, "../public")));
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }))
