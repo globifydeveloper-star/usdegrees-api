@@ -45,6 +45,7 @@ function shapeResponse(unitid: number, row: TuitionRawRow): TuitionResponse {
       tuition_in_state: toNum(row.tuition_in_state),
       tuition_out_state: toNum(row.tuition_out_state),
       booksupply: toNum(row.booksupply),
+      sticker_price_by_api: toNum(row.sticker_price_by_api),
     },
     housing: {
       roomboard_oncampus: toNum(row.roomboard_oncampus),
@@ -93,6 +94,7 @@ const TUITION_QUERY = `
     c.tuition_in_state,
     c.tuition_out_state,
     c.booksupply,
+    c.sticker_price_by_api,
 
     -- ── Housing ──────────────────────────────────────────
     c.roomboard_oncampus,
