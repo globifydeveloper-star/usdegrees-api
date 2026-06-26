@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { User, UserProfile, UpsertUserBody, ApiError } from "../types/user";
+import { REACTIVATION_COOLDOWN_HOURS } from "./profile";
 
 const router = Router();
 
@@ -90,6 +91,38 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
 
     if (!email) {
       return res.status(400).json({ error: "email is required" });
+    }
+
+    // Post-deactivation cooldown. If this email belongs to a deactivated row,
+    // block re-use until the cooldown elapses; once it has, free the email off
+    // the old (kept-for-records) row so the upsert below creates a fresh account.
+    const prior = await pool.query<{
+      id: number;
+      is_active: boolean;
+      deactivated_at: string | null;
+    }>(
+      `SELECT id, is_active, deactivated_at FROM usdusers WHERE email = $1`,
+      [email],
+    );
+    const priorRow = prior.rows[0];
+    if (priorRow && priorRow.is_active === false && priorRow.deactivated_at) {
+      const eligibleAtMs =
+        new Date(priorRow.deactivated_at).getTime() +
+        REACTIVATION_COOLDOWN_HOURS * 60 * 60 * 1000;
+
+      if (eligibleAtMs > Date.now()) {
+        return res.status(403).json({
+          error: "ACCOUNT_COOLDOWN",
+          details: `This account was recently deactivated. You can register again after ${new Date(eligibleAtMs).toISOString()}.`,
+        });
+      }
+
+      // Cooldown elapsed — release the email from the old row (kept for records)
+      // so the INSERT below registers a brand-new account.
+      await pool.query(`UPDATE usdusers SET email = $1 WHERE id = $2`, [
+        `deleted+${priorRow.id}+${email}`,
+        priorRow.id,
+      ]);
     }
 
     const result = await pool.query<User>(

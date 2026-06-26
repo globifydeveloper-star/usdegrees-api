@@ -253,33 +253,142 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
 });
 
 /**
+ * Cooldown (hours) a deactivated email must wait before it can be used to
+ * register a brand-new account. Shared with POST /user, which enforces it.
+ */
+export const REACTIVATION_COOLDOWN_HOURS = 24;
+
+interface DeactivationBody {
+  reason_code?: string;
+  reason_label?: string;
+  other_reason?: string;
+  improvement_feedback?: string;
+  acknowledged?: boolean;
+}
+
+/**
  * POST /account/delete
- * Soft-deletes the user: marks the DB row inactive and disables the Firebase
- * user so they can no longer authenticate. The row is kept (recoverable).
+ * Soft-deletes the user: marks the DB row inactive, stamps deactivated_at, and
+ * records the reason/feedback in usduser_deactivations. The Firebase user is
+ * DELETED (not just disabled) so the email is freed — the person may register a
+ * brand-new account with the same email once REACTIVATION_COOLDOWN_HOURS have
+ * elapsed (enforced in POST /user). The usdusers row is kept for records.
  */
 accountRouter.post(
   "/delete",
   verifyToken,
-  async (req: AuthRequest, res: Response<{ ok: true } | ApiError>) => {
+  async (
+    req: AuthRequest & { body?: DeactivationBody },
+    res: Response<{ ok: true } | ApiError>,
+  ) => {
     try {
       const uid = req.userId as string;
+      const {
+        reason_code,
+        reason_label,
+        other_reason,
+        improvement_feedback,
+        acknowledged,
+      } = (req.body ?? {}) as DeactivationBody;
 
-      await pool.query(
+      const updated = await pool.query<{ id: number }>(
         `UPDATE usdusers
-          SET is_active = false, deactivated_at = NOW()
-        WHERE firebase_uid = $1`,
+            SET is_active = false, deactivated_at = NOW()
+          WHERE firebase_uid = $1
+        RETURNING id`,
         [uid],
       );
 
-      // Disable (not delete) the Firebase user — keeps it recoverable and
-      // consistent with the soft delete.
-      await firebaseAuth.updateUser(uid, { disabled: true });
+      const userRow = updated.rows[0];
+      if (!userRow) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Record why the user is leaving. reason_label holds the exact text the
+      // user selected; other_reason holds free-text when they pick "Other".
+      await pool.query(
+        `INSERT INTO usduser_deactivations
+           (user_id, reason_code, reason_label, other_reason,
+            improvement_feedback, acknowledged, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [
+          userRow.id,
+          reason_code ?? "unspecified",
+          reason_label ?? "Unspecified",
+          other_reason ?? null,
+          improvement_feedback ?? null,
+          acknowledged ?? true,
+        ],
+      );
+
+      // Delete the Firebase user so the email can be reused after the cooldown.
+      await firebaseAuth.deleteUser(uid);
 
       res.json({ ok: true });
     } catch (error) {
       console.error("Account delete error:", error);
       res.status(500).json({
         error: "Failed to delete account",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+/**
+ * GET /account/availability?email=...
+ * Public. Tells the frontend whether an email can register/sign in right now, or
+ * is still inside the post-deactivation cooldown. Used to show a clear "you can
+ * register again after <date>" message instead of a generic auth error.
+ */
+accountRouter.get(
+  "/availability",
+  async (
+    req: AuthRequest,
+    res: Response<
+      { available: boolean; cooldown?: boolean; eligibleAt?: string } | ApiError
+    >,
+  ) => {
+    try {
+      const email = String(req.query.email ?? "")
+        .trim()
+        .toLowerCase();
+      if (!email) {
+        return res.status(400).json({ error: "email is required" });
+      }
+
+      const result = await pool.query<{
+        deactivated_at: string | null;
+        is_active: boolean;
+      }>(
+        `SELECT deactivated_at, is_active
+           FROM usdusers
+          WHERE LOWER(email) = $1`,
+        [email],
+      );
+
+      const row = result.rows[0];
+      if (!row || row.is_active !== false || !row.deactivated_at) {
+        return res.json({ available: true });
+      }
+
+      const eligibleAtMs =
+        new Date(row.deactivated_at).getTime() +
+        REACTIVATION_COOLDOWN_HOURS * 60 * 60 * 1000;
+
+      if (eligibleAtMs > Date.now()) {
+        return res.json({
+          available: false,
+          cooldown: true,
+          eligibleAt: new Date(eligibleAtMs).toISOString(),
+        });
+      }
+
+      return res.json({ available: true });
+    } catch (error) {
+      console.error("Account availability error:", error);
+      res.status(500).json({
+        error: "Failed to check account availability",
         details: error instanceof Error ? error.message : "Unknown error",
       });
     }

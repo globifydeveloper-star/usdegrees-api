@@ -38,17 +38,19 @@ export const verifyToken = async (
   try {
     payload = jwt.verify(token, SECRET) as AppJwtPayload;
   } catch (err) {
+    // 401 (not 403) so the client re-exchanges a fresh Firebase ID token and
+    // retries — an expired app JWT is an auth-refresh case, not "forbidden".
     console.warn(
-      `[verifyToken] 403 — jwt.verify failed: ${(err as Error).name}: ${(err as Error).message}`,
+      `[verifyToken] 401 — jwt.verify failed: ${(err as Error).name}: ${(err as Error).message}`,
     );
-    res.status(403).json({ error: "Invalid or expired token" });
+    res.status(401).json({ error: "Invalid or expired token" });
     return;
   }
 
   const uid = payload.sub;
   if (!uid) {
-    console.warn("[verifyToken] 403 — token has no sub claim");
-    res.status(403).json({ error: "Invalid token payload" });
+    console.warn("[verifyToken] 401 — token has no sub claim");
+    res.status(401).json({ error: "Invalid token payload" });
     return;
   }
 

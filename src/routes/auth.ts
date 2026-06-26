@@ -110,16 +110,21 @@ router.post(
       );
       let user = result.rows[0];
 
-      // 2. Legacy link: migrated bcrypt users exist by email with no UID yet.
+      // 2. Re-link by email. Covers two cases:
+      //    (a) migrated bcrypt users that exist by email with no UID yet, and
+      //    (b) a Firebase account that was deleted and recreated for the same
+      //        email (new UID) — e.g. re-registration after deactivation.
+      //    Either way, point the existing row at the current verified UID rather
+      //    than letting the INSERT below collide on the email UNIQUE constraint.
       if (!user && email) {
-        const legacy = await pool.query<User>(
+        const relinked = await pool.query<User>(
           `UPDATE usdusers
               SET firebase_uid = $1, last_login = NOW()
-            WHERE email = $2 AND firebase_uid IS NULL
+            WHERE email = $2
           RETURNING ${USER_COLUMNS}`,
           [uid, email],
         );
-        user = legacy.rows[0];
+        user = relinked.rows[0];
       }
 
       // 3. Reject soft-deleted accounts.
