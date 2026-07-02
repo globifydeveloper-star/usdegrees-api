@@ -43,8 +43,12 @@ router.post(
         return res.status(401).json({ error: "Unauthorized: Missing user authentication context." });
       }
 
-      // Resolve user ID
-      const userId = (await resolveUserId(firebaseUid)) || 1; // Fallback to 1 for mock/demo purposes
+      // Resolve the authenticated user's real id. Never fall back to another
+      // user's row — the report must only ever contain this user's own data.
+      const userId = await resolveUserId(firebaseUid);
+      if (!userId) {
+        return res.status(404).json({ error: "User not found." });
+      }
 
       if (!selectedColleges || !Array.isArray(selectedColleges) || selectedColleges.length === 0) {
         return res.status(400).json({ error: "A non-empty selectedColleges array of integers is required." });

@@ -11,6 +11,7 @@ export interface ReportCalculatedData {
     sat: string;
     income: string;
     preferredStates: string[];
+    preferredPrograms: string[];
   };
   program: {
     cipCode: string;
@@ -74,20 +75,27 @@ export async function fetchReportData(
   selectedColleges: number[],
   programId: number
 ): Promise<ReportCalculatedData> {
-  // 1. Fetch Student profile (gpa, sat, etc.)
+  // 1. Fetch Student profile (gpa, sat, etc.). No fabricated defaults — every
+  // value shown for the student must come from their real profile row; missing
+  // data is reported as "Not Provided", never a placeholder number.
   let studentName = "Prospective Student";
-  let gpa: number | null = 3.8;
-  let satMath: number | null = 720;
-  let satReading: number | null = 680;
+  let gpa: number | null = null;
+  let satMath: number | null = null;
+  let satReading: number | null = null;
   let preferredStates: string[] = [];
+  let preferredPrograms: string[] = [];
 
   try {
     const userRes = await pool.query(
-      `SELECT u.*, 
+      `SELECT u.*,
         COALESCE(
-          (SELECT array_agg(s.state_code) FROM usdusers_preferred_states s WHERE s.user_id = u.id),
+          (SELECT array_agg(s.state_code ORDER BY s.state_code) FROM usdusers_preferred_states s WHERE s.user_id = u.id),
           ARRAY[]::text[]
-        ) AS preferred_states
+        ) AS preferred_states,
+        COALESCE(
+          (SELECT array_agg(p.program ORDER BY p.program) FROM usdusers_preferred_programs p WHERE p.user_id = u.id),
+          ARRAY[]::text[]
+        ) AS preferred_programs
        FROM usdusers u WHERE u.id = $1`,
       [userId]
     );
@@ -98,6 +106,7 @@ export async function fetchReportData(
       satMath = u.sat_math || null;
       satReading = u.sat_reading_writing || null;
       preferredStates = u.preferred_states || [];
+      preferredPrograms = u.preferred_programs || [];
     }
   } catch (err) {
     console.error("Error fetching user profile:", err);
@@ -327,11 +336,18 @@ export async function fetchReportData(
   return {
     student: {
       name: studentName,
-      major: programTitle,
+      // Major reflects the user's own preferred programs (child table), not the
+      // report's reference program. Multiple preferences are shown comma-joined.
+      major:
+        preferredPrograms.length > 0
+          ? preferredPrograms.join(", ")
+          : "Not Provided",
       gpa: gpa ? gpa.toFixed(2) : "Not Provided",
       sat: satFormatted,
-      income: "$48,000 – $75,000", // Default baseline income tier
+      // No income is captured on the user profile, so nothing is fabricated.
+      income: "Not Provided",
       preferredStates: preferredStates,
+      preferredPrograms: preferredPrograms,
     },
     program: {
       cipCode,

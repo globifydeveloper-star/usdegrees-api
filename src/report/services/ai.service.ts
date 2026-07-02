@@ -1,6 +1,7 @@
 import { ReportCalculatedData } from "../utils/reportCalculations";
 
 export interface AiReportContent {
+  analystNote: string;
   executiveSummary: string;
   financialAnalysis: string;
   careerOutlook: string;
@@ -28,6 +29,7 @@ STUDENT PROFILE:
 - SAT Score: ${data.student.sat}
 - Income Tier: ${data.student.income}
 - Preferred States: ${data.student.preferredStates.join(", ") || "None specified"}
+- Student's Preferred Program(s): ${data.student.major}
 
 MAJOR / PROGRAM:
 - Major: ${data.program.title}
@@ -65,6 +67,7 @@ Write in a clear, authoritative, and sophisticated tone. Avoid generic templates
 
 Provide your output in strict JSON conforming to the following structure:
 {
+  "analystNote": "A 3-4 sentence note in first-person-plural analyst voice ('we'), addressed to the reader before they read the report. When you reference the field of study, use the Student's Preferred Program(s) from the STUDENT PROFILE — never the reference CIP program title. Explain that (a) this report does not rank schools by prestige, only by this family's specific cost and outcome data; (b) where the reader should pay closest attention given the data ACTUALLY PRESENT above — for example, if two of the schools show 'N/A' for admission or earnings data, say we flag missing data rather than estimating it; (c) that the recommendations are informational and should be confirmed with each institution, not treated as financial, legal, or educational advice. Do NOT invent policy references, legislation, or figures that are not present in the data above.",
   "executiveSummary": "A 3-4 sentence strategic overview of the decision context, comparing the options.",
   "financialAnalysis": "A 3-4 sentence detailed comparison of Net Price vs. long-term ROI/NPV. Highlight which option is the most financially efficient.",
   "careerOutlook": "A 3-4 sentence analysis of salary projections, debt burdens, and repayment risk for the chosen major.",
@@ -103,6 +106,7 @@ DO NOT return any HTML, Markdown code blocks, backticks, or trailing explanation
           responseSchema: {
             type: "OBJECT",
             properties: {
+              analystNote: { type: "STRING" },
               executiveSummary: { type: "STRING" },
               financialAnalysis: { type: "STRING" },
               careerOutlook: { type: "STRING" },
@@ -113,6 +117,7 @@ DO NOT return any HTML, Markdown code blocks, backticks, or trailing explanation
               },
             },
             required: [
+              "analystNote",
               "executiveSummary",
               "financialAnalysis",
               "careerOutlook",
@@ -147,6 +152,7 @@ function getFallbackMockContent(data: ReportCalculatedData): AiReportContent {
   const recCollege = data.rankings.bestValue !== "N/A" ? data.rankings.bestValue : data.colleges[0]?.name || "selected institution";
 
   return {
+    analystNote: `This report evaluates ${data.colleges.length} institution${data.colleges.length === 1 ? "" : "s"} for ${data.student.name} against ${data.student.major} outcomes using only federally sourced data. We do not rank schools by prestige — only by the cost and outcome figures specific to this profile. Where a data point is unavailable from our sources, it is shown as N/A rather than estimated. The recommendation on the following pages is informational and should be confirmed directly with each institution's financial aid office before any enrollment decision.`,
     executiveSummary: `This decision report evaluates enrollment parameters for ${data.student.name} pursuing a ${data.program.level} in ${data.program.title} across ${data.colleges.length} selected institutions: ${collegesStr}. By aligning academic credentials (GPA: ${data.student.gpa}, SAT: ${data.student.sat}) against historical admission benchmarks, we assess institutional compatibility alongside long-term cost efficiency. The evaluation prioritizes graduation certainty, financial net exposure, and professional outcome metrics.`,
     financialAnalysis: `From a financial efficiency standpoint, the Net Price ranges from a low of ${
       data.colleges.find((c) => c.name === data.rankings.lowestCost)?.netPrice?.toLocaleString()

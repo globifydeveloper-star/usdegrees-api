@@ -34,7 +34,7 @@ const PROFILE_FIELD_MAP: Record<string, string> = {
 
 /**
  * Fetch the full profile for a firebase_uid, joining the child tables into
- * preferredStates / preferredPrograms arrays (empty -> []). Returns null if
+ * preferred_states / preferred_programs arrays (empty -> []). Returns null if
  * no user row. Never includes the password hash.
  */
 async function buildProfileResponse(
@@ -61,10 +61,11 @@ async function buildProfileResponse(
 
   const { password_hash, preferred_states, preferred_programs, ...rest } =
     result.rows[0];
+  // Return the child-table sets under the snake_case keys the frontend reads.
   return {
     ...rest,
-    preferredStates: preferred_states ?? [],
-    preferredPrograms: preferred_programs ?? [],
+    preferred_states: preferred_states ?? [],
+    preferred_programs: preferred_programs ?? [],
   };
 }
 
@@ -77,7 +78,13 @@ async function resolveUserId(firebaseUid: string): Promise<string | null> {
   return r.rows.length ? r.rows[0].id : null;
 }
 
-/** Trim, drop empty, de-duplicate a string array (for preferred programs). */
+/** Max length of a preferred program name (matches the DB column intent). */
+const MAX_PROGRAM_LENGTH = 150;
+
+/**
+ * Trim, drop empty, enforce the 150-char limit, and de-duplicate a string
+ * array (for preferred programs). Values over the limit are skipped.
+ */
 function normalizePrograms(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const out: string[] = [];
@@ -85,7 +92,7 @@ function normalizePrograms(value: unknown): string[] {
   for (const v of value) {
     if (typeof v !== "string") continue;
     const t = v.trim();
-    if (!t || seen.has(t)) continue;
+    if (!t || t.length > MAX_PROGRAM_LENGTH || seen.has(t)) continue;
     seen.add(t);
     out.push(t);
   }
@@ -110,8 +117,8 @@ async function normalizeStateCodes(value: unknown): Promise<string[]> {
 
 /**
  * GET /profile
- * Returns the authenticated user's profile, including preferredStates and
- * preferredPrograms arrays joined from the child tables.
+ * Returns the authenticated user's profile, including preferred_states and
+ * preferred_programs arrays joined from the child tables.
  */
 router.get("/", verifyToken, async (req: AuthRequest, res: Response) => {
   try {

@@ -1,13 +1,26 @@
 import React from "react";
 import { ReportCalculatedData } from "../utils/reportCalculations";
 import { AiReportContent } from "../services/ai.service";
+import { theme } from "./theme";
+import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 
 export interface RecommendationProps {
   data: ReportCalculatedData;
   ai: AiReportContent;
+  reportId: string;
+  generatedDate: string;
+  pageNumber: number;
+  totalPages: number;
 }
 
-export default function Recommendation({ data, ai }: RecommendationProps) {
+export default function Recommendation({
+  data,
+  ai,
+  reportId,
+  generatedDate,
+  pageNumber,
+  totalPages,
+}: RecommendationProps) {
   // Simple rule-based logic to dynamically extract strengths & weaknesses based on DB metrics
   const getCollegesAnalysis = (c: typeof data.colleges[0]) => {
     const strengths: string[] = [];
@@ -65,80 +78,51 @@ export default function Recommendation({ data, ai }: RecommendationProps) {
   };
 
   return (
-    <div
-      style={{
-        width: "210mm",
-        height: "297mm",
-        padding: "20mm",
-        boxSizing: "border-box",
-        backgroundColor: "#FFFFFF",
-        color: "#1E293B",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        pageBreakAfter: "always",
-      }}
-    >
-      {/* Header */}
+    <div style={pageStyle}>
       <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-          <div style={{ fontSize: "14px", fontWeight: "800", color: "#1E3A8A", letterSpacing: "-0.02em" }}>
-            USDegrees Decision Report
-          </div>
-          <div style={{ fontSize: "10px", color: "#64748B" }}>SECTION 4: RECOMMENDATION & FIT</div>
-        </div>
-        <div style={{ width: "100%", height: "2px", backgroundColor: "#E2E8F0", marginBottom: "20px" }}></div>
-
-        {/* Page Title */}
-        <h2 style={{ fontSize: "22px", fontWeight: "800", color: "#0F172A", margin: "0 0 20px 0" }}>
-          Recommendation & Institutional Fit
-        </h2>
+        <PageHeader sectionLabel="SECTION 04 · RECOMMENDATION & FIT" title="Recommendation & Institutional Fit" />
 
         {/* AI Strategic Recommendation Box */}
-        <div style={{ backgroundColor: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "12px", padding: "20px", marginBottom: "25px" }}>
-          <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px" }}>
-            <span style={{ fontSize: "18px" }}>💡</span>
-            <h3 style={{ fontSize: "14px", fontWeight: "700", color: "#166534", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Adviser Strategic Recommendation
-            </h3>
-          </div>
-          <p style={{ fontSize: "12.5px", lineHeight: "1.65", color: "#14532D", fontWeight: "500", margin: 0 }}>
+        <div style={{ backgroundColor: theme.color.panelBgAlt, border: `1px solid ${theme.color.goldSoft}`, borderLeft: `3px solid ${theme.color.gold}`, borderRadius: "12px", padding: "20px", marginBottom: "25px" }}>
+          <h3 style={{ fontSize: "14px", fontWeight: 700, color: theme.color.gold, margin: "0 0 10px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Adviser Strategic Recommendation
+          </h3>
+          <p style={{ fontSize: "12.5px", lineHeight: "1.65", color: theme.color.navy, fontWeight: 500, margin: 0 }}>
             {ai.recommendation}
           </p>
         </div>
 
         {/* Admissions Fit Comparison */}
-        <h3 style={{ fontSize: "13px", fontWeight: "700", color: "#0F172A", margin: "0 0 15px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        <h3 style={{ fontSize: "13px", fontWeight: 700, color: theme.color.navy, margin: "0 0 15px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
           College Compatibility Breakdown
         </h3>
-        
+
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           {data.colleges.map((c, i) => {
             const { strengths, weaknesses } = getCollegesAnalysis(c);
             const fitColors = {
-              Safety: { text: "#166534", bg: "#DCFCE7", border: "#BBF7D0" },
-              Match: { text: "#1E40AF", bg: "#EFF6FF", border: "#BFDBFE" },
-              Reach: { text: "#991B1B", bg: "#FEE2E2", border: "#FCA5A5" },
-              Unavailable: { text: "#374151", bg: "#F3F4F6", border: "#E5E7EB" },
+              Safety: { text: theme.color.positive, bg: theme.color.positiveBg, border: theme.color.hairline },
+              Match: { text: theme.color.navy, bg: theme.color.panelBgAlt, border: theme.color.goldSoft },
+              Reach: { text: theme.color.risk, bg: theme.color.riskBg, border: theme.color.hairline },
+              Unavailable: { text: theme.color.inkMuted, bg: theme.color.panelBg, border: theme.color.hairline },
             };
             const fColor = fitColors[c.admissionFit.category] || fitColors.Unavailable;
 
             return (
-              <div key={i} style={{ border: "1px solid #E2E8F0", borderRadius: "12px", padding: "16px", backgroundColor: "#F8FAFC" }}>
+              <div key={i} style={{ border: `1px solid ${theme.color.hairline}`, borderRadius: "12px", padding: "16px", backgroundColor: theme.color.panelBg }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
                   <div>
-                    <h4 style={{ fontSize: "15px", fontWeight: "700", color: "#0F172A", margin: "0 0 4px 0" }}>
+                    <h4 style={{ fontFamily: theme.font.family, fontSize: "15px", fontWeight: 700, color: theme.color.navy, margin: "0 0 4px 0" }}>
                       {c.name}
                     </h4>
-                    <span style={{ fontSize: "11px", color: "#64748B" }}>{c.city}, {c.state}</span>
+                    <span style={{ fontSize: "11px", color: theme.color.inkMuted }}>{c.city}, {c.state}</span>
                   </div>
                   {/* Fit Badge */}
                   <div style={{
                     padding: "4px 10px",
                     borderRadius: "20px",
                     fontSize: "11px",
-                    fontWeight: "700",
+                    fontWeight: 700,
                     color: fColor.text,
                     backgroundColor: fColor.bg,
                     border: `1px solid ${fColor.border}`
@@ -147,26 +131,26 @@ export default function Recommendation({ data, ai }: RecommendationProps) {
                   </div>
                 </div>
 
-                <p style={{ fontSize: "11.5px", color: "#475569", lineHeight: "1.4", margin: "0 0 12px 0" }}>
+                <p style={{ fontSize: "11.5px", color: theme.color.inkMuted, lineHeight: "1.4", margin: "0 0 12px 0" }}>
                   {c.admissionFit.explanation}
                 </p>
 
                 {/* Strengths & Weaknesses Grid */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", borderTop: "1px solid #E2E8F0", paddingTop: "12px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", borderTop: `1px solid ${theme.color.hairline}`, paddingTop: "12px" }}>
                   <div>
-                    <div style={{ fontSize: "10px", fontWeight: "700", color: "#166534", textTransform: "uppercase", marginBottom: "6px" }}>Strengths</div>
+                    <div style={{ fontSize: "10px", fontWeight: 700, color: theme.color.positive, textTransform: "uppercase", marginBottom: "6px" }}>Strengths</div>
                     {strengths.map((str, idx) => (
-                      <div key={idx} style={{ display: "flex", gap: "6px", fontSize: "11px", color: "#334155", marginBottom: "4px" }}>
-                        <span style={{ color: "#10B981" }}>•</span>
+                      <div key={idx} style={{ display: "flex", gap: "6px", fontSize: "11px", color: theme.color.ink, marginBottom: "4px" }}>
+                        <span style={{ color: theme.color.positive }}>•</span>
                         <span>{str}</span>
                       </div>
                     ))}
                   </div>
                   <div>
-                    <div style={{ fontSize: "10px", fontWeight: "700", color: "#991B1B", textTransform: "uppercase", marginBottom: "6px" }}>Key Considerations</div>
+                    <div style={{ fontSize: "10px", fontWeight: 700, color: theme.color.risk, textTransform: "uppercase", marginBottom: "6px" }}>Key Considerations</div>
                     {weaknesses.map((weak, idx) => (
-                      <div key={idx} style={{ display: "flex", gap: "6px", fontSize: "11px", color: "#334155", marginBottom: "4px" }}>
-                        <span style={{ color: "#EF4444" }}>•</span>
+                      <div key={idx} style={{ display: "flex", gap: "6px", fontSize: "11px", color: theme.color.ink, marginBottom: "4px" }}>
+                        <span style={{ color: theme.color.risk }}>•</span>
                         <span>{weak}</span>
                       </div>
                     ))}
@@ -178,14 +162,12 @@ export default function Recommendation({ data, ai }: RecommendationProps) {
         </div>
       </div>
 
-      {/* Footer */}
-      <div>
-        <div style={{ width: "100%", height: "1px", backgroundColor: "#E2E8F0", marginBottom: "10px" }}></div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: "#94A3B8" }}>
-          <span>USDegrees Decision Report | ID: {data.student.gpa !== "Not Provided" ? "USD-REP-01" : "USD-MOCK"}</span>
-          <span>Page 5 of 6</span>
-        </div>
-      </div>
+      <PageFooter
+        reportId={reportId}
+        generatedDate={generatedDate}
+        pageNumber={pageNumber}
+        totalPages={totalPages}
+      />
     </div>
   );
 }

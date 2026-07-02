@@ -1,5 +1,6 @@
 import React from "react";
 import { ReportCalculatedData } from "../utils/reportCalculations";
+import { theme } from "./theme";
 
 export interface CoverProps {
   data: ReportCalculatedData;
@@ -15,9 +16,9 @@ export default function Cover({ data, reportId, generatedDate }: CoverProps) {
         height: "297mm",
         padding: "25mm 20mm 20mm 20mm",
         boxSizing: "border-box",
-        backgroundColor: "#0F172A", // Dark Slate corporate background
-        color: "#FFFFFF",
-        fontFamily: "system-ui, -apple-system, sans-serif",
+        backgroundColor: theme.color.coverBg,
+        color: theme.color.white,
+        fontFamily: theme.font.sans,
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
@@ -27,39 +28,50 @@ export default function Cover({ data, reportId, generatedDate }: CoverProps) {
       {/* Top Header Section */}
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: "28px", fontWeight: "900", letterSpacing: "-0.05em", color: "#3B82F6" }}>
-            US<span style={{ color: "#FFFFFF" }}>Degrees</span>
+          <div
+            style={{
+              fontFamily: theme.font.family,
+              fontSize: "28px",
+              fontWeight: 800,
+              letterSpacing: "-0.03em",
+            }}
+          >
+            <span style={{ color: theme.color.white }}>USDegrees</span>
+            <span style={{ color: theme.color.gold }}>.com</span>
           </div>
-          <div style={{ fontSize: "11px", fontWeight: "600", color: "#94A3B8", letterSpacing: "0.1em" }}>
+          <div style={{ fontSize: "11px", fontWeight: 600, color: theme.color.inkFaint, letterSpacing: "0.1em" }}>
             CONFIDENTIAL REPORT
           </div>
         </div>
-        <div style={{ width: "100%", height: "1px", backgroundColor: "#334155", marginTop: "15px" }}></div>
+        <div style={{ width: "100%", height: "1px", backgroundColor: theme.color.hairlineOnNavy, marginTop: "15px" }}></div>
       </div>
 
       {/* Middle Hero Section */}
       <div style={{ flexGrow: 1, display: "flex", flexDirection: "column", justifyContent: "center", paddingBottom: "40px" }}>
-        <div style={{ fontSize: "14px", fontWeight: "700", color: "#60A5FA", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "15px" }}>
-          Academic Strategy Group
+        <div style={{ fontSize: "12px", fontWeight: 700, color: theme.color.gold, letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "10px" }}>
+          U.S. Degrees · Decision Engine
         </div>
-        <h1 style={{ fontSize: "48px", fontWeight: "800", lineHeight: "1.1", letterSpacing: "-0.02em", color: "#FFFFFF", margin: "0 0 25px 0" }}>
+        <div style={{ fontSize: "11px", color: theme.color.inkFaint, letterSpacing: "0.04em", marginBottom: "18px" }}>
+          Prepared for {data.student.name} · {data.colleges.length} institution{data.colleges.length === 1 ? "" : "s"} compared
+        </div>
+        <h1 style={{ fontFamily: theme.font.family, fontSize: "48px", fontWeight: 800, lineHeight: "1.1", letterSpacing: "-0.02em", color: theme.color.white, margin: "0 0 25px 0" }}>
           AI College Decision Report
         </h1>
-        <p style={{ fontSize: "18px", color: "#94A3B8", fontWeight: "400", lineHeight: "1.5", margin: "0 0 50px 0", maxWidth: "550px" }}>
-          A comparative multi-dimensional study evaluating tuition investment, admissions compatibility, and career outcomes.
+        <p style={{ fontSize: "18px", color: theme.color.inkFaint, fontWeight: 400, lineHeight: "1.5", margin: "0 0 50px 0", maxWidth: "550px" }}>
+          A comparative, data-driven study evaluating tuition investment, admissions compatibility, and career outcomes.
         </p>
 
         {/* Selected Colleges Panel */}
-        <div style={{ backgroundColor: "#1E293B", borderRadius: "16px", padding: "24px", border: "1px solid #334155" }}>
-          <div style={{ fontSize: "11px", fontWeight: "700", color: "#60A5FA", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "12px" }}>
+        <div style={{ backgroundColor: theme.color.navyDeep, borderRadius: "16px", padding: "24px", border: `1px solid ${theme.color.hairlineOnNavy}` }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, color: theme.color.gold, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "12px" }}>
             Institutions Evaluated
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             {data.colleges.map((c, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <span style={{ color: "#3B82F6", fontSize: "18px", fontWeight: "bold" }}>•</span>
-                <span style={{ fontSize: "15px", fontWeight: "600", color: "#F8FAFC" }}>{c.name}</span>
-                <span style={{ fontSize: "13px", color: "#64748B" }}>({c.city}, {c.state})</span>
+                <span style={{ color: theme.color.gold, fontSize: "18px", fontWeight: "bold" }}>•</span>
+                <span style={{ fontSize: "15px", fontWeight: 600, color: theme.color.white }}>{c.name}</span>
+                <span style={{ fontSize: "13px", color: theme.color.inkFaint }}>({c.city}, {c.state})</span>
               </div>
             ))}
           </div>
@@ -68,22 +80,22 @@ export default function Cover({ data, reportId, generatedDate }: CoverProps) {
 
       {/* Bottom Footer Section */}
       <div>
-        <div style={{ width: "100%", height: "1px", backgroundColor: "#334155", marginBottom: "20px" }}></div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px", fontSize: "12px", color: "#94A3B8" }}>
+        <div style={{ width: "100%", height: "1px", backgroundColor: theme.color.hairlineOnNavy, marginBottom: "20px" }}></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px", fontSize: "12px", color: theme.color.inkFaint }}>
           <div>
-            <div style={{ fontWeight: "700", color: "#E2E8F0", marginBottom: "4px" }}>Prepared For</div>
+            <div style={{ fontWeight: 700, color: theme.color.goldSoft, marginBottom: "4px" }}>Prepared For</div>
             <div>{data.student.name}</div>
             <div>Major: {data.student.major}</div>
           </div>
           <div>
-            <div style={{ fontWeight: "700", color: "#E2E8F0", marginBottom: "4px" }}>Report Reference</div>
+            <div style={{ fontWeight: 700, color: theme.color.goldSoft, marginBottom: "4px" }}>Report Reference</div>
             <div>ID: {reportId}</div>
-            <div>Database: College Scorecard (2026)</div>
+            <div>Database: College Scorecard</div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontWeight: "700", color: "#E2E8F0", marginBottom: "4px" }}>Generated Date</div>
+            <div style={{ fontWeight: 700, color: theme.color.goldSoft, marginBottom: "4px" }}>Generated Date</div>
             <div>{generatedDate}</div>
-            <div style={{ color: "#60A5FA", fontWeight: "600" }}>System Verified</div>
+            <div style={{ color: theme.color.gold, fontWeight: 600 }}>System Verified</div>
           </div>
         </div>
       </div>
