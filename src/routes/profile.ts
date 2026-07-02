@@ -30,7 +30,11 @@ const PROFILE_FIELD_MAP: Record<string, string> = {
   graduationYear: "graduation_year",
   highSchoolName: "high_school_name",
   preferredDegreeLevel: "preferred_degree_level",
+  preferredCollegeType: "preferred_college_type",
 };
+
+/** Allowed values for preferred_college_type (empty/NULL = no preference). */
+const COLLEGE_TYPES = ["Public", "Private"] as const;
 
 /**
  * Fetch the full profile for a firebase_uid, joining the child tables into
@@ -166,6 +170,23 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
           const canonical = normalizeDegreeLevel(value);
           if (canonical === null) continue; // strip invalid silently
           value = canonical;
+        }
+      } else if (column === "preferred_college_type") {
+        // Empty string (or explicit null) clears the preference; when set it
+        // must be one of the canonical types.
+        if (value === null || (typeof value === "string" && value.trim() === "")) {
+          value = null;
+        } else if (
+          typeof value === "string" &&
+          (COLLEGE_TYPES as readonly string[]).includes(value.trim())
+        ) {
+          value = value.trim();
+        } else {
+          return res.status(400).json({
+            error: `preferredCollegeType must be one of ${COLLEGE_TYPES.join(
+              ", ",
+            )}, or empty to clear`,
+          });
         }
       } else if (typeof value === "string") {
         value = value.trim();
