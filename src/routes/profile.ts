@@ -24,6 +24,9 @@ const PROFILE_FIELD_MAP: Record<string, string> = {
   phone: "phone",
   address: "address",
   gpa: "gpa",
+  satScore: "sat_score",
+  // Deprecated: kept only while the frontend still writes the split sub-scores
+  // as a temporary fallback. Remove once fully migrated to satScore.
   satMath: "sat_math",
   satReadingWriting: "sat_reading_writing",
   actScore: "act_score",
@@ -187,6 +190,18 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
               ", ",
             )}, or empty to clear`,
           });
+        }
+      } else if (column === "sat_score") {
+        // A single total SAT score: null clears it; otherwise it must be an
+        // integer in the valid 400..1600 range.
+        if (value !== null) {
+          const n = typeof value === "string" ? Number(value.trim()) : value;
+          if (typeof n !== "number" || !Number.isInteger(n) || n < 400 || n > 1600) {
+            return res.status(400).json({
+              error: "satScore must be an integer between 400 and 1600, or null to clear",
+            });
+          }
+          value = n;
         }
       } else if (typeof value === "string") {
         value = value.trim();
