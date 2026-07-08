@@ -23,6 +23,15 @@ export interface OverviewRow {
   sat_math_max: number | null;
   sat_avg_overall: number | null;
 
+  // admission_disclosure_categories (nulled when the disclosure is suppressed)
+  sat_disclosure_category: string | null;
+  badge_label: string | null;
+  badge_color: string | null;
+  supporting_copy: string | null;
+  disclaimer_tier: number | null;
+  disclaimer_text: string | null;
+  show_admission_rate_required: boolean | null;
+
   // students
   size: number | null;
   student_faculty_ratio: string | null;
@@ -66,6 +75,13 @@ export interface OverviewResponse {
     sat_math_min: number | null;
     sat_math_max: number | null;
     sat_avg_overall: number | null;
+    satDisclosureCategory: string | null;
+    badgeLabel: string | null;
+    badgeColor: string | null;
+    supportingCopy: string | null;
+    disclaimerTier: number | null;
+    disclaimerText: string | null;
+    showAdmissionRateRequired: boolean;
   };
   students: {
     size: number | null;

@@ -47,7 +47,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     try {
       const defaultProgRes = await pool.query(
         "SELECT cip_code, credential_title FROM programs WHERE unitid = $1 LIMIT 1",
-        [unitidNum]
+        [unitidNum],
       );
       if (defaultProgRes.rows.length > 0) {
         cleanCip = defaultProgRes.rows[0].cip_code;
@@ -96,6 +96,19 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       ad.sat_math_max             AS sat_math_max,
       ad.sat_avg_overall          AS sat_avg_overall,
 
+      -- ── SAT disclosure category (suppressed unless published) ─────────
+      -- When the disclosure row is suppressed (publish_publicly = false, e.g.
+      -- D_REVIEW_PENDING / F_INSTITUTION_CLOSED) we expose the category as NULL
+      -- so no badge/copy leaks; the join below then yields NULL c.* too.
+      CASE WHEN ad.publish_publicly = true
+           THEN ad.sat_disclosure_category END AS sat_disclosure_category,
+      adc.badge_label                  AS badge_label,
+      adc.badge_color                  AS badge_color,
+      adc.supporting_copy              AS supporting_copy,
+      adc.disclaimer_tier              AS disclaimer_tier,
+      adc.disclaimer_text              AS disclaimer_text,
+      adc.show_admission_rate_required AS show_admission_rate_required,
+
       -- ── Students ──────────────────────────────────────────────────────
       st.size                     AS size,
       st.student_faculty_ratio    AS student_faculty_ratio,
@@ -131,6 +144,14 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     /* Admission rate — school level */
     LEFT JOIN admissions ad
       ON ad.unitid = s.unitid
+
+    /* SAT disclosure category — badge/copy for the admissions tab. The
+       publish_publicly = true guard lives in the join (not the outer WHERE) so a
+       suppressed disclosure only nulls the c.* fields; the school + its other
+       admissions data still return. */
+    LEFT JOIN admission_disclosure_categories adc
+      ON adc.category = ad.sat_disclosure_category
+     AND ad.publish_publicly = true
 
     /* Enrolment, faculty ratio, retention — school level */
     LEFT JOIN students st
@@ -212,6 +233,13 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
         sat_math_min: safeNum(row.sat_math_min),
         sat_math_max: safeNum(row.sat_math_max),
         sat_avg_overall: safeNum(row.sat_avg_overall),
+        satDisclosureCategory: row.sat_disclosure_category ?? null,
+        badgeLabel: row.badge_label ?? null,
+        badgeColor: row.badge_color ?? null,
+        supportingCopy: row.supporting_copy ?? null,
+        disclaimerTier: safeNum(row.disclaimer_tier),
+        disclaimerText: row.disclaimer_text ?? null,
+        showAdmissionRateRequired: row.show_admission_rate_required ?? false,
       },
       students: {
         size: safeNum(row.size),
