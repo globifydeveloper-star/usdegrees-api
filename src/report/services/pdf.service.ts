@@ -1,10 +1,41 @@
 import React from "react";
 import ReactDOMServer from "react-dom/server";
-import puppeteer from "puppeteer";
+import chromium from "@sparticuz/chromium";
+import puppeteerCore, { Browser } from "puppeteer-core";
 import * as path from "path";
 import ReportDocument from "../components/ReportDocument";
 import { ReportCalculatedData } from "../utils/reportCalculations";
 import { AiReportContent } from "./ai.service";
+
+/**
+ * Render environments (Render, most PaaS/serverless platforms) have no
+ * reliable place to cache a full downloaded Chrome binary between build and
+ * runtime — that mismatch is what produces "Could not find Chrome" in
+ * production. @sparticuz/chromium ships a prebuilt Chromium binary inside
+ * the npm package itself, so there's no download step and no cache-path
+ * dependency at all.
+ *
+ * Locally, `puppeteer` (full package, devDependency only) is used instead so
+ * development doesn't require installing serverless-Chromium — `npm install`
+ * skips devDependencies when NODE_ENV=production, which Render sets, so the
+ * heavy `puppeteer` package (and its own Chrome download) is never pulled in
+ * on the server at all.
+ */
+async function launchBrowser(): Promise<Browser> {
+  if (process.env.NODE_ENV === "production") {
+    return puppeteerCore.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: true,
+    });
+  }
+
+  const puppeteer = require("puppeteer") as typeof import("puppeteer");
+  return puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  }) as unknown as Browser;
+}
 
 export interface GeneratePdfOptions {
   data: ReportCalculatedData;
@@ -83,10 +114,7 @@ export async function generateReportPdf(options: GeneratePdfOptions): Promise<Bu
   // 3. Puppeteer generation — rendered straight into memory (no `path`
   // option), so nothing touches disk.
   console.log(`Starting Puppeteer PDF rendering for report ID ${reportId}...`);
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();
