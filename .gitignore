@@ -79,6 +79,11 @@ dist/
 public/build/
 
 # ------------------------------
+# Private report storage (never committed — generated PDFs, RLS-protected)
+# ------------------------------
+storage/
+
+# ------------------------------
 # Misc
 # ------------------------------
 *.pem

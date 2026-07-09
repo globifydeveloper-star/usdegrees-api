@@ -1,7 +1,6 @@
 import React from "react";
 import ReactDOMServer from "react-dom/server";
 import puppeteer from "puppeteer";
-import * as fs from "fs";
 import * as path from "path";
 import ReportDocument from "../components/ReportDocument";
 import { ReportCalculatedData } from "../utils/reportCalculations";
@@ -14,7 +13,23 @@ export interface GeneratePdfOptions {
   generatedDate: string;
 }
 
-export async function generateReportPdf(options: GeneratePdfOptions): Promise<string> {
+/** Private storage directory for generated report PDFs (not statically served). */
+export function getReportsDir(): string {
+  return path.join(__dirname, "..", "..", "..", "storage", "reports");
+}
+
+/** Resolve the absolute path on disk for a report PDF given its stored file name. */
+export function getReportPdfPath(fileName: string): string {
+  return path.join(getReportsDir(), fileName);
+}
+
+/**
+ * Renders the report to a PDF and returns it as an in-memory Buffer — the PDF
+ * is no longer written to disk. usdreports.pdf_data (bytea) is the sole
+ * source of truth for report downloads; pdf_storage_path only still matters
+ * for pre-migration legacy rows.
+ */
+export async function generateReportPdf(options: GeneratePdfOptions): Promise<Buffer> {
   const { data, ai, reportId, generatedDate } = options;
 
   // 1. Render the React component tree to static HTML markup
@@ -65,21 +80,8 @@ export async function generateReportPdf(options: GeneratePdfOptions): Promise<st
 </html>
   `;
 
-  // 3. Define output paths
-  const publicDir = path.join(__dirname, "..", "..", "..", "public");
-  const reportsDir = path.join(publicDir, "reports");
-
-  if (!fs.existsSync(publicDir)) {
-    fs.mkdirSync(publicDir, { recursive: true });
-  }
-  if (!fs.existsSync(reportsDir)) {
-    fs.mkdirSync(reportsDir, { recursive: true });
-  }
-
-  const fileName = `report-${reportId}.pdf`;
-  const outputPath = path.join(reportsDir, fileName);
-
-  // 4. Puppeteer generation
+  // 3. Puppeteer generation — rendered straight into memory (no `path`
+  // option), so nothing touches disk.
   console.log(`Starting Puppeteer PDF rendering for report ID ${reportId}...`);
   const browser = await puppeteer.launch({
     headless: true,
@@ -88,7 +90,7 @@ export async function generateReportPdf(options: GeneratePdfOptions): Promise<st
 
   try {
     const page = await browser.newPage();
-    
+
     // Set viewport to match standard A4 screen resolution at 96 DPI
     await page.setViewport({
       width: 794,
@@ -99,16 +101,16 @@ export async function generateReportPdf(options: GeneratePdfOptions): Promise<st
     // Load content and wait for network/styles to settle
     await page.setContent(fullHtml, { waitUntil: "load" });
 
-    // Print A4 PDF
-    await page.pdf({
-      path: outputPath,
+    // Print A4 PDF into a buffer
+    const pdfUint8Array = await page.pdf({
       format: "A4",
       printBackground: true,
       preferCSSPageSize: true,
     });
+    const pdfBuffer = Buffer.from(pdfUint8Array);
 
-    console.log(`PDF successfully created at: ${outputPath}`);
-    return fileName;
+    console.log(`PDF successfully generated in memory for report ID ${reportId} (${pdfBuffer.length} bytes)`);
+    return pdfBuffer;
   } finally {
     await browser.close();
   }
