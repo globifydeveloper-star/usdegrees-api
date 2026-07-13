@@ -65,3 +65,26 @@ export interface ProgramSearchResponse {
     year_5: number | null;
   };
 }
+
+// ── API #4 – All Programs (keyword + degree-level search) ─────────────────────
+
+export interface AllProgramsRow {
+  title: string;
+  cip_code: string;
+  credential_title: string;
+  credential_level: number;
+  degree_level_category: string;
+}
+
+export type AllProgramsResponse = AllProgramsRow[];
+
+// ── API #5 – Credentials (distinct credential levels at a school) ─────────────
+
+export interface CredentialRow {
+  credential_title: string;
+  credential_level: number;
+}
+
+export interface CredentialsResponse {
+  credentials: CredentialRow[];
+}

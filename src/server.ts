@@ -43,6 +43,7 @@ app.use("/outcomes", outcomes);
 app.use("/tuition", tuitionRoute);
 app.use("/campus", campusRoute);
 app.use("/programs", programsRoute);
+app.use("/schools", schoolLevelSearchRouter);
 app.use("/colleges", collegesRoute);
 app.use("/compare", compareRoute);
 app.use("/user", userRoute);
