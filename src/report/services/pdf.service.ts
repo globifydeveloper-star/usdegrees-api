@@ -4,8 +4,7 @@ import chromium from "@sparticuz/chromium";
 import puppeteerCore, { Browser } from "puppeteer-core";
 import * as path from "path";
 import ReportDocument from "../components/ReportDocument";
-import { ReportCalculatedData } from "../utils/reportCalculations";
-import { AiReportContent } from "./ai.service";
+import type { C1LitePayload, C1LiteNarrative } from "./reportPrompt";
 
 /**
  * Render environments (Render, most PaaS/serverless platforms) have no
@@ -38,8 +37,8 @@ async function launchBrowser(): Promise<Browser> {
 }
 
 export interface GeneratePdfOptions {
-  data: ReportCalculatedData;
-  ai: AiReportContent;
+  payload: C1LitePayload;
+  narrative: C1LiteNarrative;
   reportId: string;
   generatedDate: string;
 }
@@ -61,12 +60,12 @@ export function getReportPdfPath(fileName: string): string {
  * for pre-migration legacy rows.
  */
 export async function generateReportPdf(options: GeneratePdfOptions): Promise<Buffer> {
-  const { data, ai, reportId, generatedDate } = options;
+  const { payload, narrative, reportId, generatedDate } = options;
 
   // 1. Render the React component tree to static HTML markup
   const element = React.createElement(ReportDocument, {
-    data,
-    ai,
+    payload,
+    narrative,
     reportId,
     generatedDate,
   });

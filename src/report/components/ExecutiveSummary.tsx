@@ -1,12 +1,11 @@
 import React from "react";
-import { ReportCalculatedData } from "../utils/reportCalculations";
-import { AiReportContent } from "../services/ai.service";
+import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 
 export interface PageProps {
-  data: ReportCalculatedData;
-  ai: AiReportContent;
+  payload: C1LitePayload;
+  narrative: C1LiteNarrative;
   reportId: string;
   generatedDate: string;
   pageNumber: number;
@@ -14,92 +13,64 @@ export interface PageProps {
 }
 
 export default function ExecutiveSummary({
-  data,
-  ai,
+  payload,
+  narrative,
   reportId,
   generatedDate,
   pageNumber,
   totalPages,
 }: PageProps) {
+  const { derived_flags } = payload;
+
   return (
     <div style={pageStyle}>
       <div>
-        <PageHeader sectionLabel="SECTION 01 · EXECUTIVE SUMMARY" title="Executive Summary & Analysis" />
+        <PageHeader sectionLabel="SECTION 01 · EXECUTIVE SUMMARY" title="Executive Summary" />
 
         {/* Narrative Grid */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "16px", marginBottom: "22px" }}>
-          {/* Executive Summary Block */}
           <div style={{ backgroundColor: theme.color.panelBg, borderRadius: "12px", padding: "18px", border: `1px solid ${theme.color.hairline}` }}>
             <h3 style={{ fontSize: "13px", fontWeight: 700, color: theme.color.navy, margin: "0 0 8px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
               Decision Context
             </h3>
             <p style={{ fontSize: "12.5px", lineHeight: "1.6", margin: 0, color: theme.color.ink }}>
-              {ai.executiveSummary}
+              {narrative.executive_summary}
             </p>
           </div>
 
-          {/* Recommendation Block */}
           <div style={{ backgroundColor: theme.color.panelBgAlt, borderRadius: "12px", padding: "18px", border: `1px solid ${theme.color.goldSoft}`, borderLeft: `3px solid ${theme.color.gold}` }}>
             <h3 style={{ fontSize: "13px", fontWeight: 700, color: theme.color.gold, margin: "0 0 8px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Strategic Recommendation
+              Critical Finding
             </h3>
             <p style={{ fontSize: "12.5px", lineHeight: "1.6", margin: 0, color: theme.color.navy, fontWeight: 500 }}>
-              {ai.recommendation}
+              {narrative.critical_finding}
             </p>
           </div>
         </div>
 
-        {/* Rankings KPI Grid */}
+        {/* Two-minute read: one factual line per school */}
         <h3 style={{ fontSize: "13px", fontWeight: 700, color: theme.color.navy, margin: "0 0 12px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-          Calculated Decision Scorecard
+          Two-Minute Read
         </h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "22px" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", backgroundColor: theme.color.positiveBg, border: `1px solid ${theme.color.hairline}`, borderRadius: "8px" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: theme.color.positive }}></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "22px" }}>
+          {narrative.two_minute_lines.map((line, idx) => (
+            <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 14px", backgroundColor: theme.color.panelBg, border: `1px solid ${theme.color.hairline}`, borderRadius: "8px" }}>
               <div style={{ flexGrow: 1 }}>
-                <div style={{ fontSize: "10px", color: theme.color.positive, fontWeight: 700, textTransform: "uppercase" }}>Best Value (ROI)</div>
-                <div style={{ fontSize: "12.5px", fontWeight: 700, color: theme.color.ink }}>{data.rankings.bestValue}</div>
+                <div style={{ fontSize: "10px", color: theme.color.navy, fontWeight: 700, textTransform: "uppercase" }}>{line.school}</div>
+                <div style={{ fontSize: "12px", color: theme.color.ink, lineHeight: "1.5" }}>{line.line}</div>
               </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", backgroundColor: theme.color.panelBg, border: `1px solid ${theme.color.hairline}`, borderRadius: "8px" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: theme.color.gold }}></div>
-              <div style={{ flexGrow: 1 }}>
-                <div style={{ fontSize: "10px", color: theme.color.warning, fontWeight: 700, textTransform: "uppercase" }}>Lowest Cost</div>
-                <div style={{ fontSize: "12.5px", fontWeight: 700, color: theme.color.ink }}>{data.rankings.lowestCost}</div>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", backgroundColor: theme.color.panelBg, border: `1px solid ${theme.color.hairline}`, borderRadius: "8px" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: theme.color.navy }}></div>
-              <div style={{ flexGrow: 1 }}>
-                <div style={{ fontSize: "10px", color: theme.color.navy, fontWeight: 700, textTransform: "uppercase" }}>Highest Avg Graduate Salary</div>
-                <div style={{ fontSize: "12.5px", fontWeight: 700, color: theme.color.ink }}>{data.rankings.highestSalary}</div>
-              </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", backgroundColor: theme.color.riskBg, border: `1px solid ${theme.color.hairline}`, borderRadius: "8px" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: theme.color.risk }}></div>
-              <div style={{ flexGrow: 1 }}>
-                <div style={{ fontSize: "10px", color: theme.color.risk, fontWeight: 700, textTransform: "uppercase" }}>Highest Financial Risk</div>
-                <div style={{ fontSize: "12.5px", fontWeight: 700, color: theme.color.ink }}>{data.rankings.biggestRisk}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Key Findings List */}
-        <h3 style={{ fontSize: "13px", fontWeight: 700, color: theme.color.navy, margin: "0 0 12px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-          Key Research Findings
-        </h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {ai.keyFindings.map((finding, idx) => (
-            <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "12px", color: theme.color.ink, lineHeight: "1.5" }}>
-              <span style={{ color: theme.color.gold, fontWeight: "bold", fontSize: "14px", marginTop: "-2px" }}>✓</span>
-              <span>{finding}</span>
             </div>
           ))}
+        </div>
+
+        {/* Ranges — factual spread across the selected schools, not a ranking */}
+        <h3 style={{ fontSize: "13px", fontWeight: 700, color: theme.color.navy, margin: "0 0 12px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          Cost & Outcomes Range
+        </h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+          <RangeTile label="Net Price Range" low={derived_flags.cost_range_low} high={derived_flags.cost_range_high} prefix="$" />
+          <RangeTile label="Program Earnings Range" low={derived_flags.earnings_range_low} high={derived_flags.earnings_range_high} prefix="$" />
+          <RangeTile label="Typical Debt Range" low={derived_flags.debt_range_low} high={derived_flags.debt_range_high} prefix="$" />
         </div>
       </div>
 
@@ -109,6 +80,18 @@ export default function ExecutiveSummary({
         pageNumber={pageNumber}
         totalPages={totalPages}
       />
+    </div>
+  );
+}
+
+function RangeTile({ label, low, high, prefix }: { label: string; low: string; high: string; prefix: string }) {
+  const hasData = low !== "" && high !== "";
+  return (
+    <div style={{ padding: "10px 14px", backgroundColor: theme.color.panelBg, border: `1px solid ${theme.color.hairline}`, borderRadius: "8px" }}>
+      <div style={{ fontSize: "10px", color: theme.color.inkMuted, fontWeight: 700, textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontSize: "12.5px", fontWeight: 700, color: theme.color.ink }}>
+        {hasData ? `${prefix}${Number(low).toLocaleString()} – ${prefix}${Number(high).toLocaleString()}` : "Not published"}
+      </div>
     </div>
   );
 }

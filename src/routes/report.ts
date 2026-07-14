@@ -1,10 +1,10 @@
 import { Router, Response } from "express";
 import * as fs from "fs";
-import { fetchReportData } from "../report/utils/reportCalculations";
-import { generateReportAiContent } from "../report/services/ai.service";
+import { generateC1LiteReport } from "../report/services/ai.service";
 import { generateReportPdf, getReportPdfPath } from "../report/services/pdf.service";
 import {
-  persistGeneratedReport,
+  createPendingReport,
+  attachReportPdfAndColleges,
   listReportsForUser,
   getReportForUser,
   getReportPdfSourceByReferenceId,
@@ -13,7 +13,6 @@ import { signReportDownloadToken, verifyReportDownloadToken } from "../utils/rep
 import { verifyToken } from "../middleware/auth";
 import { AuthRequest } from "../types/user";
 import pool from "../db/client";
-import * as crypto from "crypto";
 
 const router = Router();
 
@@ -78,48 +77,62 @@ router.post(
         return res.status(400).json({ error: "A non-empty selectedColleges array of integers is required." });
       }
 
-      const progId = programId || 20015; // default to computer science if missing
-
-      // 1. Fetch data & perform mathematical calculations in backend
-      const reportData = await fetchReportData(userId, selectedColleges, progId);
-
-      if (reportData.colleges.length === 0) {
-        return res.status(404).json({ error: "None of the specified selectedColleges were found in the database." });
+      // Resolve the reference program's CIP code (if given) so every
+      // selected school's earnings/ROI are pulled at the program level
+      // rather than school-aggregated.
+      let programCip: string | undefined;
+      if (programId) {
+        const progRes = await pool.query<{ cip_code: string }>(
+          "SELECT cip_code FROM programs WHERE id = $1",
+          [programId],
+        );
+        programCip = progRes.rows[0]?.cip_code;
       }
 
-      // 2. Call LLM for summary commentary (strict JSON output)
-      const aiContent = await generateReportAiContent(reportData);
+      // Reserve the durable report_reference_id before generation so the
+      // content itself cites the same id that ends up persisted.
+      const { reportReferenceId, createdAt } = await createPendingReport(userId);
 
-      // 3. Define metadata parameters. This is a throwaway id used only to
-      // label the PDF's internal title/filename during rendering — the
-      // durable, frontend-facing identifier is the report_reference_id
-      // generated in persistGeneratedReport (with a DB uniqueness check).
-      const renderId = crypto.randomBytes(6).toString("hex").toUpperCase();
-      const generatedDate = new Date().toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-
-      // 4. Render to a PDF buffer using Puppeteer — kept in memory, never
-      // written to disk.
-      const pdfBuffer = await generateReportPdf({
-        data: reportData,
-        ai: aiContent,
-        reportId: renderId,
-        generatedDate,
-      });
-
-      // 5. Persist report metadata, PDF bytes, and selected colleges in one
-      // transaction so we never end up with a report row that has zero
-      // colleges or missing PDF data.
-      const reportReferenceId = await persistGeneratedReport({
+      // NOTE: no income bracket is captured anywhere in intake yet (no
+      // column on usdusers, no field on this request). Net price renders as
+      // the posted (non-personalized) figure until intake captures it.
+      const result = await generateC1LiteReport({
         userId,
-        pdfData: pdfBuffer,
-        colleges: reportData.colleges.map((c) => ({ unitid: c.unitid })),
+        reportReferenceId,
+        schools: selectedColleges.map((unitid) => ({ unitid, programCip })),
+        incomeBracket: null,
       });
 
-      console.log(`[report/generate] Report persisted: ${reportReferenceId}`);
+      if (!result.passed) {
+        // Do NOT render or ship the PDF. The pending usdreports row (created
+        // above, pdf_data still NULL) is the flag for manual review.
+        console.error(
+          `[report/generate] C1-Lite gates failed for report ${reportReferenceId}:`,
+          result.gateErrors,
+        );
+        return res.status(422).json({
+          error: "Report generation did not pass acceptance checks and was withheld.",
+          details: result.gateErrors.join("; "),
+        });
+      }
+
+      // Render to a PDF buffer using Puppeteer — kept in memory, never
+      // written to disk. Both the payload (numbers/tables) and the
+      // narrative (generated prose) feed the .tsx components.
+      const pdfBuffer = await generateReportPdf({
+        payload: result.payload,
+        narrative: result.narrative,
+        reportId: reportReferenceId,
+        generatedDate: result.payload.report_meta.generated_date,
+      });
+
+      await attachReportPdfAndColleges({
+        reportReferenceId,
+        pdfData: pdfBuffer,
+        colleges: selectedColleges.map((unitid) => ({ unitid })),
+      });
+
+      console.log(`[report/generate] Report persisted: ${reportReferenceId} (created ${createdAt})`);
 
       // The report_reference_id is the only identifier the frontend should
       // ever see or use — fetch the PDF via GET /report/:reportId, which

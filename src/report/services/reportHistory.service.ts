@@ -24,22 +24,23 @@ async function isReferenceIdTaken(client: PoolClient, candidate: string): Promis
   return (result.rowCount ?? 0) > 0;
 }
 
-/**
- * Insert the usdreports row and its usdreport_colleges rows in a single
- * transaction, so a failure partway through never leaves a report with zero
- * colleges. Returns the report_reference_id — the only identifier callers
- * should hand back to the frontend.
- */
-export async function persistGeneratedReport(params: {
-  userId: number;
-  pdfData: Buffer;
-  colleges: Array<{ unitid: number }>;
-}): Promise<string> {
-  const { userId, pdfData, colleges } = params;
-  if (colleges.length === 0) {
-    throw new Error("Cannot persist a report with zero colleges");
-  }
+export interface PendingReport {
+  reportReferenceId: string;
+  createdAt: string;
+}
 
+/**
+ * Reserve a usdreports row (pdf_data left NULL) before the LLM call, so the
+ * report_reference_id and created_at shown inside the generated content are
+ * the real, final identifiers of the persisted row rather than a throwaway
+ * id swapped in afterward.
+ *
+ * A row with pdf_data still NULL after generation IS the "flagged for
+ * review" state: gate failures (see routes/report.ts) never call
+ * attachReportPdfAndColleges, so the row is left visibly incomplete for
+ * manual follow-up instead of silently disappearing.
+ */
+export async function createPendingReport(userId: number): Promise<PendingReport> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -56,16 +57,56 @@ export async function persistGeneratedReport(params: {
       throw new Error("Failed to generate a unique report_reference_id after several attempts");
     }
 
-    // pdf_storage_path is intentionally left NULL for new rows — pdf_data is
-    // now the sole source of truth for downloads. It only still exists on
-    // pre-migration legacy rows.
-    const insertReportResult = await client.query<{ id: number }>(
-      `INSERT INTO usdreports (user_id, report_reference_id, pdf_data, pdf_size, mime_type)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id`,
-      [userId, reportReferenceId, pdfData, pdfData.length, "application/pdf"],
+    const result = await client.query<{ created_at: string }>(
+      `INSERT INTO usdreports (user_id, report_reference_id)
+       VALUES ($1, $2)
+       RETURNING created_at`,
+      [userId, reportReferenceId],
     );
-    const reportId = insertReportResult.rows[0].id;
+
+    await client.query("COMMIT");
+    return { reportReferenceId, createdAt: result.rows[0].created_at };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Fill in the PDF bytes and selected colleges for a report reserved by
+ * createPendingReport(), once generation has passed the acceptance gates.
+ * One transaction so a failure partway through never leaves a report with
+ * a PDF but zero colleges (or vice versa).
+ */
+export async function attachReportPdfAndColleges(params: {
+  reportReferenceId: string;
+  pdfData: Buffer;
+  colleges: Array<{ unitid: number }>;
+}): Promise<void> {
+  const { reportReferenceId, pdfData, colleges } = params;
+  if (colleges.length === 0) {
+    throw new Error("Cannot persist a report with zero colleges");
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // pdf_storage_path is intentionally left NULL for new rows — pdf_data is
+    // the sole source of truth for downloads. It only still exists on
+    // pre-migration legacy rows.
+    const updateResult = await client.query<{ id: number }>(
+      `UPDATE usdreports SET pdf_data = $1, pdf_size = $2, mime_type = $3
+        WHERE report_reference_id = $4
+        RETURNING id`,
+      [pdfData, pdfData.length, "application/pdf", reportReferenceId],
+    );
+    if (updateResult.rows.length === 0) {
+      throw new Error(`No pending report found for reference id ${reportReferenceId}`);
+    }
+    const reportId = updateResult.rows[0].id;
 
     const values: number[] = [];
     const placeholders = colleges
@@ -82,7 +123,6 @@ export async function persistGeneratedReport(params: {
     );
 
     await client.query("COMMIT");
-    return reportReferenceId;
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

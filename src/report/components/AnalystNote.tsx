@@ -1,12 +1,11 @@
 import React from "react";
-import { ReportCalculatedData } from "../utils/reportCalculations";
-import { AiReportContent } from "../services/ai.service";
+import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 
 export interface AnalystNoteProps {
-  data: ReportCalculatedData;
-  ai: AiReportContent;
+  payload: C1LitePayload;
+  narrative: C1LiteNarrative;
   reportId: string;
   generatedDate: string;
   pageNumber: number;
@@ -14,22 +13,19 @@ export interface AnalystNoteProps {
 }
 
 export default function AnalystNote({
-  data,
-  ai,
+  payload,
+  narrative,
   reportId,
   generatedDate,
   pageNumber,
   totalPages,
 }: AnalystNoteProps) {
-  const salutation =
-    data.student.name === "Prospective Student"
-      ? "Regarding this evaluation,"
-      : `Dear ${data.student.name},`;
+  const salutation = `Dear ${payload.student.display_name},`;
 
   // Split the analyst note into paragraphs on blank lines; fall back to a
-  // single paragraph. We never synthesize extra content — only what the AI
-  // (or deterministic fallback) actually produced is shown.
-  const paragraphs = (ai.analystNote || "")
+  // single paragraph. We never synthesize extra content — only what the
+  // model actually produced is shown.
+  const paragraphs = (narrative.analyst_note || "")
     .split(/\n{2,}/)
     .map((p) => p.trim())
     .filter(Boolean);
@@ -37,7 +33,7 @@ export default function AnalystNote({
   return (
     <div style={pageStyle}>
       <div>
-        <PageHeader sectionLabel="A NOTE BEFORE YOU READ" title="From the Decision Engine Team" />
+        <PageHeader sectionLabel="A NOTE BEFORE YOU READ" title="From the Report Team" />
 
         <div
           style={{
@@ -74,7 +70,7 @@ export default function AnalystNote({
           </div>
           <div style={{ width: "48px", height: "2px", backgroundColor: theme.color.gold, marginBottom: "8px" }}></div>
           <div style={{ fontFamily: theme.font.family, fontSize: "14px", fontWeight: 700, color: theme.color.navy }}>
-            U.S. Degrees · Decision Engine Team
+            U.S. Degrees · Report Team
           </div>
         </div>
       </div>
@@ -94,6 +90,7 @@ export default function AnalystNote({
           }}
         >
           No college, lender, or admissions consultant has paid for placement in this report.
+          This report does not rank or recommend any school.
         </div>
 
         <PageFooter

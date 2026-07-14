@@ -1,14 +1,15 @@
 import React from "react";
-import { ReportCalculatedData } from "../utils/reportCalculations";
+import type { C1LitePayload } from "../services/reportPrompt";
 import { theme } from "./theme";
 
 export interface CoverProps {
-  data: ReportCalculatedData;
+  payload: C1LitePayload;
   reportId: string;
   generatedDate: string;
 }
 
-export default function Cover({ data, reportId, generatedDate }: CoverProps) {
+export default function Cover({ payload, reportId, generatedDate }: CoverProps) {
+  const { student, schools } = payload;
   return (
     <div
       style={{
@@ -49,16 +50,18 @@ export default function Cover({ data, reportId, generatedDate }: CoverProps) {
       {/* Middle Hero Section */}
       <div style={{ flexGrow: 1, display: "flex", flexDirection: "column", justifyContent: "center", paddingBottom: "40px" }}>
         <div style={{ fontSize: "12px", fontWeight: 700, color: theme.color.gold, letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "10px" }}>
-          U.S. Degrees · Decision Engine
+          U.S. Degrees · College Decision Report
         </div>
         <div style={{ fontSize: "11px", color: theme.color.inkFaint, letterSpacing: "0.04em", marginBottom: "18px" }}>
-          Prepared for {data.student.name} · {data.colleges.length} institution{data.colleges.length === 1 ? "" : "s"} compared
+          Prepared for {student.display_name} · {schools.length} institution{schools.length === 1 ? "" : "s"} compared
         </div>
         <h1 style={{ fontFamily: theme.font.family, fontSize: "48px", fontWeight: 800, lineHeight: "1.1", letterSpacing: "-0.02em", color: theme.color.white, margin: "0 0 25px 0" }}>
-          AI College Decision Report
+          College Decision Report
         </h1>
         <p style={{ fontSize: "18px", color: theme.color.inkFaint, fontWeight: 400, lineHeight: "1.5", margin: "0 0 50px 0", maxWidth: "550px" }}>
-          A comparative, data-driven study evaluating tuition investment, admissions compatibility, and career outcomes.
+          A neutral, data-driven look at cost and outcomes across the schools you selected.
+          This report does not rank or recommend a school — it lays out what the public data
+          shows so your family can weigh the trade-offs.
         </p>
 
         {/* Selected Colleges Panel */}
@@ -67,11 +70,11 @@ export default function Cover({ data, reportId, generatedDate }: CoverProps) {
             Institutions Evaluated
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {data.colleges.map((c, i) => (
+            {schools.map((s, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <span style={{ color: theme.color.gold, fontSize: "18px", fontWeight: "bold" }}>•</span>
-                <span style={{ fontSize: "15px", fontWeight: 600, color: theme.color.white }}>{c.name}</span>
-                <span style={{ fontSize: "13px", color: theme.color.inkFaint }}>({c.city}, {c.state})</span>
+                <span style={{ fontSize: "15px", fontWeight: 600, color: theme.color.white }}>{s.name}</span>
+                <span style={{ fontSize: "13px", color: theme.color.inkFaint }}>({s.city}, {s.state})</span>
               </div>
             ))}
           </div>
@@ -84,8 +87,8 @@ export default function Cover({ data, reportId, generatedDate }: CoverProps) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px", fontSize: "12px", color: theme.color.inkFaint }}>
           <div>
             <div style={{ fontWeight: 700, color: theme.color.goldSoft, marginBottom: "4px" }}>Prepared For</div>
-            <div>{data.student.name}</div>
-            <div>Major: {data.student.major}</div>
+            <div>{student.display_name}</div>
+            {student.preferred_degree_level && <div>Preferred level: {student.preferred_degree_level}</div>}
           </div>
           <div>
             <div style={{ fontWeight: 700, color: theme.color.goldSoft, marginBottom: "4px" }}>Report Reference</div>

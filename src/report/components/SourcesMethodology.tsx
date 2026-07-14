@@ -1,10 +1,10 @@
 import React from "react";
-import { ReportCalculatedData } from "../utils/reportCalculations";
+import type { C1LitePayload } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 
 export interface SourcesMethodologyProps {
-  data: ReportCalculatedData;
+  payload: C1LitePayload;
   reportId: string;
   generatedDate: string;
   pageNumber: number;
