@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import jwt, { SignOptions } from "jsonwebtoken";
+import { jwtVerify, createRemoteJWKSet, JWTPayload } from "jose";
 import { DecodedIdToken } from "firebase-admin/auth";
 import { firebaseAuth } from "../config/firebase";
 import pool from "../db/client";
@@ -9,6 +10,12 @@ import { User, UserProfile, ApiError, AuthRequest } from "../types/user";
 const router = Router();
 const SECRET = process.env.JWT_SECRET || "your_secret_key";
 const APP_JWT_TTL = process.env.APP_JWT_TTL || "30m";
+
+const APPLE_ISSUER = "https://appleid.apple.com";
+const APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID;
+// createRemoteJWKSet caches the JWKS response internally and re-fetches
+// on a `kid` cache miss, so no separate caching layer is needed here.
+const appleJwks = createRemoteJWKSet(new URL(`${APPLE_ISSUER}/auth/keys`));
 
 const USER_COLUMNS =
   "id, firebase_uid, email, display_name, profile_image, role, email_verified, is_active";
@@ -166,6 +173,128 @@ router.post(
       console.error("[auth/login] 500 — unexpected error:", error);
       return res.status(500).json({
         error: "Login failed",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+/**
+ * POST /auth/apple
+ * Verifies an Apple identity token directly against Apple's JWKS — independent
+ * of the Firebase-based /auth/login flow — and mints the same kind of app JWT.
+ *
+ * Body:   { id_token: string }   (Apple identity token from Sign in with Apple)
+ * Returns: { token: string, user: UserProfile }
+ *
+ * Unlike /auth/login this returns the full user object inline, since there's
+ * no separate Firebase-driven /auth/me sync call in the Apple flow.
+ */
+router.post(
+  "/apple",
+  async (
+    req: Request<{}, { token: string; user: UserProfile } | ApiError, { id_token?: string }>,
+    res: Response<{ token: string; user: UserProfile } | ApiError>,
+  ) => {
+    try {
+      const idToken = req.body?.id_token;
+
+      if (!idToken) {
+        return res.status(400).json({ error: "id_token is required" });
+      }
+
+      if (!APPLE_CLIENT_ID) {
+        console.error("[auth/apple] 500 — APPLE_CLIENT_ID is not configured");
+        return res.status(500).json({ error: "Apple sign-in is not configured" });
+      }
+
+      let payload: JWTPayload;
+      try {
+        ({ payload } = await jwtVerify(idToken, appleJwks, {
+          issuer: APPLE_ISSUER,
+          audience: APPLE_CLIENT_ID,
+        }));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[auth/apple] 401 — jwtVerify failed: ${message}`);
+        return res.status(401).json({ error: "Invalid or expired Apple token" });
+      }
+
+      const sub = payload.sub;
+      if (!sub) {
+        return res.status(401).json({ error: "Invalid Apple token payload" });
+      }
+
+      const email = typeof payload.email === "string" ? payload.email : null;
+      // Apple encodes this as a boolean or a stringified boolean depending on
+      // token version, so normalize both.
+      const emailVerified =
+        payload.email_verified === true || payload.email_verified === "true";
+
+      const emailValue = email ?? `${sub}@privaterelay.appleid.com`;
+      const displayName = email ? email.split("@")[0] : "New User";
+
+      // Namespace the Apple `sub` into firebase_uid so this row keys the same
+      // way Firebase-issued users do — verifyToken and GET /auth/me look users
+      // up by firebase_uid = JWT `sub`, and reusing that column here avoids
+      // touching either of them for a second identity source.
+      const appleUid = `apple:${sub}`;
+
+      // 1. Find the row by provider_user_id (Apple's stable subject).
+      let result = await pool.query<User>(
+        `SELECT ${USER_COLUMNS} FROM usdusers WHERE provider_user_id = $1 AND auth_provider = 'apple'`,
+        [sub],
+      );
+      let user = result.rows[0];
+
+      // 2. Re-link by email — covers an existing account (e.g. Google or
+      //    credentials) signing in with Apple for the first time. Point it at
+      //    the Apple identity the same way /auth/login re-links Firebase
+      //    providers onto a shared email.
+      if (!user && email) {
+        const relinked = await pool.query<User>(
+          `UPDATE usdusers
+              SET firebase_uid = $1, provider_user_id = $2, last_login = NOW()
+            WHERE email = $3
+          RETURNING ${USER_COLUMNS}`,
+          [appleUid, sub, email],
+        );
+        user = relinked.rows[0];
+      }
+
+      if (user && user.is_active === false) {
+        return res.status(403).json({ error: "This account has been deleted" });
+      }
+
+      // 3. Idempotent upsert keyed on firebase_uid (the column with the
+      //    UNIQUE constraint — see firebase_auth.sql): insert on first
+      //    sign-in, otherwise mirror email/email_verified and bump
+      //    last_login. Profile fields are only set on insert so we never
+      //    clobber PATCH edits.
+      const upserted = await pool.query<User>(
+        `INSERT INTO usdusers
+           (firebase_uid, provider_user_id, email, display_name, profile_image,
+            email_verified, auth_provider, role, is_active, created_at, last_login)
+         VALUES ($1, $2, $3, $4, NULL, $5, 'apple', 'student', true, NOW(), NOW())
+         ON CONFLICT (firebase_uid) DO UPDATE SET
+           email             = EXCLUDED.email,
+           email_verified    = EXCLUDED.email_verified,
+           provider_user_id  = EXCLUDED.provider_user_id,
+           last_login        = NOW()
+         RETURNING ${USER_COLUMNS}`,
+        [appleUid, sub, emailValue, displayName, emailVerified],
+      );
+      user = upserted.rows[0];
+
+      const token = jwt.sign({ sub: user.firebase_uid }, SECRET, {
+        expiresIn: APP_JWT_TTL,
+      } as SignOptions);
+
+      return res.json({ token, user: toProfile(user) });
+    } catch (error) {
+      console.error("[auth/apple] 500 — unexpected error:", error);
+      return res.status(500).json({
+        error: "Apple sign-in failed",
         details: error instanceof Error ? error.message : "Unknown error",
       });
     }
