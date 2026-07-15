@@ -193,7 +193,11 @@ router.post(
 router.post(
   "/apple",
   async (
-    req: Request<{}, { token: string; user: UserProfile } | ApiError, { id_token?: string }>,
+    req: Request<
+      {},
+      { token: string; user: UserProfile } | ApiError,
+      { id_token?: string; full_name?: string }
+    >,
     res: Response<{ token: string; user: UserProfile } | ApiError>,
   ) => {
     try {
@@ -232,7 +236,14 @@ router.post(
         payload.email_verified === true || payload.email_verified === "true";
 
       const emailValue = email ?? `${sub}@privaterelay.appleid.com`;
-      const displayName = email ? email.split("@")[0] : "New User";
+      // Apple only sends full_name on the very first authorization for a given
+      // sub — the frontend passes it through here so we can seed display_name
+      // at account creation. It's ignored below on every subsequent login
+      // (the INSERT...ON CONFLICT never overwrites display_name), so there's
+      // no need to gate this on "is this a new user" — it just never matters
+      // again once the row exists.
+      const fullName = req.body?.full_name?.trim() || null;
+      const displayName = fullName || (email ? email.split("@")[0] : "New User");
 
       // Namespace the Apple `sub` into firebase_uid so this row keys the same
       // way Firebase-issued users do — verifyToken and GET /auth/me look users
