@@ -6,11 +6,12 @@
     "node": ">=22.17.0"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --require ts-node/register/transpile-only --test src/**/*.test.ts",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "migrate:firebase": "ts-node scripts/migrate-bcrypt-to-firebase.ts"
+    "migrate:firebase": "ts-node scripts/migrate-bcrypt-to-firebase.ts",
+    "refresh:athletic-benchmarks": "ts-node scripts/refreshAthleticDivisionBenchmarks.ts"
   },
   "repository": {
     "type": "git",

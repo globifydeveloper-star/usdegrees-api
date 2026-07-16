@@ -2,8 +2,12 @@ import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { verifyToken } from "../middleware/auth";
 import { AuthRequest } from "../types/user";
+import { getAthleticsProfile } from "../services/athletics.service";
+import { AthleticsProfile } from "../types/athletics";
 
 const router = Router();
+
+const MAX_COMPARE_ATHLETICS = 4;
 
 interface CollegeDropdownItem {
   unitid: number;
@@ -348,6 +352,69 @@ router.delete(
       console.error("Remove compare selection error:", error);
       return res.status(500).json({
         error: "Failed to remove from comparison",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+interface ApiErrorBody {
+  error: string;
+  details?: string;
+}
+
+/**
+ * GET /compare/athletics?unitids=100654,100663,100706
+ * Bulk variant of GET /colleges/:unitid/athletics for the college comparison
+ * feature. Returns one profile per unitid, in the order requested. Unitids
+ * with no athletic_summary row are silently omitted (not an error) so a
+ * comparison set can mix schools with and without athletics data.
+ *
+ * Query params:
+ *  - unitids: Required. Comma-separated list of unitids, max 4 (matches
+ *             the existing comparison UI constraint).
+ */
+router.get(
+  "/athletics",
+  async (req: Request, res: Response<AthleticsProfile[] | ApiErrorBody>) => {
+    try {
+      const raw = toStr(req.query.unitids);
+      if (!raw) {
+        return res
+          .status(400)
+          .json({ error: "unitids query parameter is required" });
+      }
+
+      const unitids: number[] = [];
+      const seen = new Set<number>();
+      for (const part of raw.split(",")) {
+        const n = toNum(part.trim());
+        if (n === null || !Number.isInteger(n) || n <= 0 || seen.has(n))
+          continue;
+        seen.add(n);
+        unitids.push(n);
+      }
+
+      if (unitids.length === 0) {
+        return res
+          .status(400)
+          .json({ error: "unitids must contain at least one valid unitid" });
+      }
+      if (unitids.length > MAX_COMPARE_ATHLETICS) {
+        return res.status(400).json({
+          error: `A maximum of ${MAX_COMPARE_ATHLETICS} unitids can be compared at once`,
+        });
+      }
+
+      const profiles = await Promise.all(
+        unitids.map((id) => getAthleticsProfile(id)),
+      );
+
+      res.json(profiles.filter((p): p is AthleticsProfile => p !== null));
+    } catch (error) {
+      console.error("Error fetching compare athletics:", error);
+      res.status(500).json({
+        error: "Failed to fetch athletics comparison",
         details: error instanceof Error ? error.message : "Unknown error",
       });
     }

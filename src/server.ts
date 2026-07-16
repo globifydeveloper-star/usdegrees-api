@@ -24,6 +24,7 @@ import profileRoute, { accountRouter } from "./routes/profile";
 import savedCollegesRoute from "./routes/savedColleges";
 import degreeLevelsRoute from "./routes/degreeLevels";
 import reportRoute from "./routes/report";
+import athleticsRoute from "./routes/athletics";
 
 const PORT = process.env.PORT || 8000;
 console.log("SERVER.TS EXECUTED");
@@ -53,6 +54,7 @@ app.use("/account", accountRouter);
 app.use("/saved-colleges", savedCollegesRoute);
 app.use("/degree-levels", degreeLevelsRoute);
 app.use("/report", reportRoute);
+app.use("/athletics", athleticsRoute);
 // app.get("/check", (req, res) => {
 //   console.log("HEADERS:", req.headers);
 //   res.json({ status: "ok", headers: req.headers });

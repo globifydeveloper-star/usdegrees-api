@@ -24,6 +24,8 @@
 import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { College, CollegesResponse, ApiError } from "../types/colleges";
+import { getAthleticsProfile } from "../services/athletics.service";
+import { AthleticsProfile } from "../types/athletics";
 
 const router = Router();
 
@@ -279,6 +281,49 @@ router.get(
       console.error("Error fetching college:", error);
       res.status(500).json({
         error: "Failed to fetch college",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+/**
+ * GET /colleges/:unitid/athletics
+ * Returns the combined athletics disclosure profile (EADA data) for a
+ * single school: summary financials, roster breakdown, division benchmark,
+ * and the pre-written summary paragraph.
+ *
+ * Query params:
+ *  - year: Optional. Pin to a specific survey_year. Defaults to the most
+ *          recent survey_year on file for the unitid.
+ *
+ * 404 if the unitid has no athletic_summary row. Schools with no
+ * athletic_sports rows still return 200 with roster: [] and
+ * hasRosterData: false rather than erroring (~500 of 1,954 schools).
+ */
+router.get(
+  "/:unitid/athletics",
+  async (req: Request, res: Response<AthleticsProfile | ApiError>) => {
+    try {
+      const id = toNum(req.params.unitid);
+      if (!id) {
+        return res.status(400).json({ error: "Invalid college ID" });
+      }
+
+      const year = toStr(req.query.year) ?? undefined;
+      const profile = await getAthleticsProfile(id, year);
+
+      if (!profile) {
+        return res.status(404).json({
+          error: "Athletics data not found for this college",
+        });
+      }
+
+      res.json(profile);
+    } catch (error) {
+      console.error("Error fetching athletics profile:", error);
+      res.status(500).json({
+        error: "Failed to fetch athletics profile",
         details: error instanceof Error ? error.message : "Unknown error",
       });
     }
