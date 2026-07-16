@@ -18,7 +18,7 @@ const APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID;
 const appleJwks = createRemoteJWKSet(new URL(`${APPLE_ISSUER}/auth/keys`));
 
 const USER_COLUMNS =
-  "id, firebase_uid, email, display_name, profile_image, role, email_verified, is_active";
+  "id, firebase_uid, email, display_name, profile_image, role, email_verified, is_active, age_consent";
 
 /**
  * Map Firebase's `firebase.sign_in_provider` onto an auth_provider value the
@@ -46,6 +46,7 @@ function toProfile(user: User): UserProfile {
     profile_image: user.profile_image,
     role: user.role,
     email_verified: user.email_verified,
+    age_consent: user.age_consent,
   };
 }
 

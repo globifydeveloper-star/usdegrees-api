@@ -15,6 +15,7 @@ export interface User {
   created_at: string;
   last_login: string | null;
   password_hash?: string | null;
+  age_consent: boolean;
 }
 
 export interface UserProfile {
@@ -24,6 +25,7 @@ export interface UserProfile {
   profile_image: string | null;
   role: string;
   email_verified: boolean;
+  age_consent: boolean;
 }
 
 export interface UpsertUserBody {
@@ -34,6 +36,7 @@ export interface UpsertUserBody {
   role?: string;
   email_verified?: boolean;
   provider_user_id?: string;
+  age_consent?: boolean;
 }
 
 export interface ApiError {

@@ -17,7 +17,7 @@ router.get("/:id", async (req: Request<{ id: string }>, res: Response<UserProfil
     }
 
     const result = await pool.query<User>(
-      `SELECT id, display_name, email, profile_image, role, email_verified
+      `SELECT id, display_name, email, profile_image, role, email_verified, age_consent
        FROM usdusers WHERE id = $1`,
       [id]
     );
@@ -34,6 +34,7 @@ router.get("/:id", async (req: Request<{ id: string }>, res: Response<UserProfil
       profile_image: row.profile_image,
       role: row.role,
       email_verified: row.email_verified,
+      age_consent: row.age_consent,
     });
   } catch (error) {
     console.error("Error fetching user:", error);
@@ -53,7 +54,7 @@ router.get("/email/:email", async (req: Request<{ email: string }>, res: Respons
     const { email } = req.params;
 
     const result = await pool.query<User>(
-      `SELECT id, display_name, email, profile_image, role, email_verified
+      `SELECT id, display_name, email, profile_image, role, email_verified, age_consent
        FROM usdusers WHERE email = $1`,
       [email]
     );
@@ -70,6 +71,7 @@ router.get("/email/:email", async (req: Request<{ email: string }>, res: Respons
       profile_image: row.profile_image,
       role: row.role,
       email_verified: row.email_verified,
+      age_consent: row.age_consent,
     });
   } catch (error) {
     console.error("Error fetching user by email:", error);
@@ -87,7 +89,7 @@ router.get("/email/:email", async (req: Request<{ email: string }>, res: Respons
  */
 router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>, res: Response<UserProfile | ApiError>) => {
   try {
-    const { email, display_name, profile_image, auth_provider, role, email_verified, provider_user_id } = req.body;
+    const { email, display_name, profile_image, auth_provider, role, email_verified, provider_user_id, age_consent } = req.body;
 
     if (!email) {
       return res.status(400).json({ error: "email is required" });
@@ -127,16 +129,17 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
 
     const result = await pool.query<User>(
       `INSERT INTO usdusers
-         (email, display_name, profile_image, auth_provider, role, email_verified, provider_user_id, created_at, last_login)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+         (email, display_name, profile_image, auth_provider, role, email_verified, provider_user_id, age_consent, created_at, last_login)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
        ON CONFLICT (email)
        DO UPDATE SET
          display_name     = COALESCE(EXCLUDED.display_name, usdusers.display_name),
          profile_image    = COALESCE(EXCLUDED.profile_image, usdusers.profile_image),
          email_verified   = COALESCE(EXCLUDED.email_verified, usdusers.email_verified),
          provider_user_id = COALESCE(EXCLUDED.provider_user_id, usdusers.provider_user_id),
+         age_consent       = COALESCE(EXCLUDED.age_consent, usdusers.age_consent),
          last_login       = NOW()
-       RETURNING id, display_name, email, profile_image, role, email_verified`,
+       RETURNING id, display_name, email, profile_image, role, email_verified, age_consent`,
       [
         email,
         display_name ?? null,
@@ -145,6 +148,7 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
         role ?? "user",
         email_verified ?? false,
         provider_user_id ?? null,
+        age_consent ?? false,
       ]
     );
 
@@ -156,6 +160,7 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
       profile_image: row.profile_image,
       role: row.role,
       email_verified: row.email_verified,
+      age_consent: row.age_consent,
     });
   } catch (error) {
     console.error("Error upserting user:", error);
