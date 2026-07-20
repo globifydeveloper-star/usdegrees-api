@@ -119,6 +119,45 @@ interface SelectedItem {
   acceptanceRate: number | null; // admissions.admission_rate
   addedAt: string | Date | null; // earliest created_at across history
   schoolUrl: string | null; // schools.school_url, normalized to absolute
+  schoolType: string | null; // programs.school_type, e.g. "Public, 4-year"
+  accreditor: string | null; // schools.accreditor
+  academics: {
+    satRangeLow: number | null; // admissions.school_min_range (or summed p25 math+reading)
+    satRangeHigh: number | null; // admissions.school_max_range (or summed p75 math+reading)
+    graduationRate: number | null; // completion.completion_rate (raw fraction, same convention as acceptanceRate)
+  };
+  cost: {
+    tuitionOutState: number | null; // costs.tuition_out_state
+    stickerPrice: number | null; // costs.sticker_price_by_api
+    avgDebt: number | null; // debt_income_ratio.avg_debt
+    debtIncomeRatio: number | null; // debt_income_ratio.debt_income_ratio
+  };
+  outcomes: {
+    programEarnings: number | null; // AVG(earnings_against_courses.year_10) across the school's programs
+    avgSalary: number | null; // roi.avg_salary (best roi_20yr row)
+    roi20Yr: number | null; // roi.roi_20yr
+  };
+  programs: {
+    studentFacultyRatio: string | null; // students.student_faculty_ratio, formatted "5:1"
+    repaymentSuccess: number | null; // repayment.repayment_success (raw fraction)
+    popularFields: {
+      fieldName: string;
+      percentage: number;
+      programCount: number;
+    }[]; // program_distribution, top 5 by share
+    degreeLevels: {
+      level: string;
+      totalPrograms: number;
+      topTitles: string[];
+    }[]; // programs, grouped by degree_level_category (Undergraduate/Graduate/Professional/Other)
+    selectedProgram: {
+      title: string;
+      cipCode: string | null;
+      degreeLevelCategory: string | null;
+      credentialLevel: number | null;
+      earnings: number | null; // earnings_against_courses.year_10 for this exact program
+    } | null; // set only when a `program` filter is passed and the school offers a matching title
+  };
 }
 
 /**
@@ -166,6 +205,14 @@ function toFloat(val: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Format a raw ratio (e.g. 14.2) as "14:1", matching /programs' convention. */
+function formatRatio(val: unknown): string | null {
+  const n = toFloat(val);
+  if (n === null) return null;
+  const display = n < 10 ? n.toFixed(1).replace(/\.0$/, "") : Math.round(n).toString();
+  return `${display}:1`;
+}
+
 function toLocation(city: unknown, state: unknown): string | null {
   const parts = [city, state]
     .map((v) => (v == null ? "" : String(v).trim()))
@@ -187,8 +234,18 @@ async function getCurrentSet(userId: string): Promise<number[]> {
     .filter((n): n is number => n !== null && Number.isInteger(n));
 }
 
-/** Enriched current set with per-unitid earliest addedAt. */
-async function getSelectedEnriched(userId: string): Promise<SelectedItem[]> {
+/**
+ * Enriched current set with per-unitid earliest addedAt.
+ * When `programTitle` is given, each school is matched against its own
+ * `programs.title` (ILIKE, so "Accounting and Computer Science" matches the
+ * "Accounting and Computer Science." row) and `selectedProgram` carries that
+ * program's own CIP-level earnings instead of the school-wide average.
+ */
+async function getSelectedEnriched(
+  userId: string,
+  programTitle?: string,
+): Promise<SelectedItem[]> {
+  const programParam = programTitle ? `%${programTitle}%` : null;
   const { rows } = await pool.query(
     `WITH latest AS (
         SELECT compared_colleges
@@ -212,34 +269,231 @@ async function getSelectedEnriched(userId: string): Promise<SelectedItem[]> {
      SELECT
         sel.unitid,
         added.added_at,
-        s.name              AS name,
-        s.city              AS city,
-        s.state             AS state,
-        s.school_url        AS school_url,
-        ad.admission_rate   AS admission_rate,
-        c.tuition_in_state  AS tuition_in_state
+        s.name                 AS name,
+        s.city                 AS city,
+        s.state                AS state,
+        s.school_url           AS school_url,
+        s.accreditor           AS accreditor,
+        p.school_type          AS school_type,
+        ad.admission_rate      AS admission_rate,
+        ad.school_min_range    AS sat_low,
+        ad.school_max_range    AS sat_high,
+        ad.sat_p25_math        AS sat_p25_math,
+        ad.sat_p75_math        AS sat_p75_math,
+        ad.sat_p25_reading     AS sat_p25_reading,
+        ad.sat_p75_reading     AS sat_p75_reading,
+        comp.completion_rate   AS completion_rate,
+        c.tuition_in_state     AS tuition_in_state,
+        c.tuition_out_state    AS tuition_out_state,
+        c.sticker_price_by_api AS sticker_price,
+        debt.avg_debt          AS avg_debt,
+        debt.debt_income_ratio AS debt_income_ratio,
+        roi.avg_salary         AS avg_salary,
+        roi.roi_20yr           AS roi_20yr,
+        earn.avg_year10        AS program_earnings,
+        stu.student_faculty_ratio AS student_faculty_ratio,
+        rep.repayment_success  AS repayment_success,
+        fields.top_fields      AS top_fields,
+        degLevels.degree_levels AS degree_levels,
+        selProg.title           AS sel_program_title,
+        selProg.cip_code        AS sel_program_cip,
+        selProg.credential_level AS sel_program_credential_level,
+        selProg.degree_level_category AS sel_program_degree_level,
+        progEarn.year_10        AS sel_program_earnings
      FROM sel
      JOIN added ON added.unitid = sel.unitid
      LEFT JOIN schools s ON s.unitid = sel.unitid
      LEFT JOIN LATERAL (
-        SELECT admission_rate FROM admissions WHERE unitid = sel.unitid LIMIT 1
+        SELECT school_type FROM programs WHERE unitid = sel.unitid LIMIT 1
+     ) p ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT admission_rate, school_min_range, school_max_range,
+               sat_p25_math, sat_p75_math, sat_p25_reading, sat_p75_reading
+          FROM admissions WHERE unitid = sel.unitid LIMIT 1
      ) ad ON TRUE
      LEFT JOIN LATERAL (
-        SELECT tuition_in_state FROM costs WHERE unitid = sel.unitid LIMIT 1
+        SELECT completion_rate FROM completion WHERE unitid = sel.unitid LIMIT 1
+     ) comp ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT tuition_in_state, tuition_out_state, sticker_price_by_api
+          FROM costs WHERE unitid = sel.unitid LIMIT 1
      ) c ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT avg_debt, debt_income_ratio
+          FROM debt_income_ratio WHERE unitid = sel.unitid LIMIT 1
+     ) debt ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT avg_salary, roi_20yr FROM roi
+         WHERE unitid = sel.unitid
+         ORDER BY roi_20yr DESC NULLS LAST LIMIT 1
+     ) roi ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT AVG(year_10) AS avg_year10 FROM earnings_against_courses
+         WHERE unitid = sel.unitid AND year_10 IS NOT NULL
+     ) earn ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT student_faculty_ratio FROM students WHERE unitid = sel.unitid LIMIT 1
+     ) stu ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT repayment_success FROM repayment WHERE unitid = sel.unitid LIMIT 1
+     ) rep ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT jsonb_agg(t.* ORDER BY t.percentage DESC) AS top_fields
+          FROM (
+             SELECT field_name, percentage, program_count FROM program_distribution
+              WHERE unitid = sel.unitid
+              ORDER BY percentage DESC LIMIT 5
+          ) t
+     ) fields ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+                 jsonb_build_object(
+                   'level', dl.degree_level_category,
+                   'total_programs', dl.total_programs,
+                   'top_titles', dl.top_titles
+                 )
+                 ORDER BY CASE dl.degree_level_category
+                            WHEN 'Undergraduate' THEN 1
+                            WHEN 'Graduate' THEN 2
+                            WHEN 'Professional' THEN 3
+                            ELSE 4
+                          END
+               ) AS degree_levels
+          FROM (
+             SELECT
+                p.degree_level_category,
+                COUNT(*) AS total_programs,
+                ARRAY(
+                   SELECT DISTINCT p2.title FROM programs p2
+                    WHERE p2.unitid = sel.unitid
+                      AND p2.degree_level_category = p.degree_level_category
+                    ORDER BY p2.title ASC LIMIT 3
+                ) AS top_titles
+             FROM programs p
+             WHERE p.unitid = sel.unitid
+             GROUP BY p.degree_level_category
+          ) dl
+     ) degLevels ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT title, cip_code, credential_level, degree_level_category
+          FROM programs
+         WHERE unitid = sel.unitid
+           AND $2::text IS NOT NULL
+           AND title ILIKE $2
+         ORDER BY title ASC
+         LIMIT 1
+     ) selProg ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT year_10 FROM earnings_against_courses
+         WHERE unitid = sel.unitid
+           AND selProg.cip_code IS NOT NULL
+           AND replace(cip_code, '.', '') = replace(selProg.cip_code, '.', '')
+           AND year_10 IS NOT NULL
+         ORDER BY grad_cohort DESC
+         LIMIT 1
+     ) progEarn ON TRUE
      ORDER BY added.added_at ASC, sel.unitid ASC`,
-    [userId],
+    [userId, programParam],
   );
 
-  return rows.map((row) => ({
-    unitid: toNum(row.unitid),
-    name: row.name ?? null,
-    location: toLocation(row.city, row.state),
-    tuitionInState: toFloat(row.tuition_in_state),
-    acceptanceRate: toFloat(row.admission_rate),
-    addedAt: row.added_at ?? null,
-    schoolUrl: normalizeUrl(row.school_url),
-  }));
+  return rows.map((row) => {
+    const sat25 =
+      toFloat(row.sat_low) ??
+      (row.sat_p25_math != null && row.sat_p25_reading != null
+        ? toFloat(row.sat_p25_math)! + toFloat(row.sat_p25_reading)!
+        : null);
+    const sat75 =
+      toFloat(row.sat_high) ??
+      (row.sat_p75_math != null && row.sat_p75_reading != null
+        ? toFloat(row.sat_p75_math)! + toFloat(row.sat_p75_reading)!
+        : null);
+
+    const popularFields: {
+      fieldName: string;
+      percentage: number;
+      programCount: number;
+    }[] = Array.isArray(row.top_fields)
+      ? row.top_fields
+          .filter((f: { field_name?: string }) => f?.field_name)
+          .map(
+            (f: {
+              field_name: string;
+              percentage: unknown;
+              program_count: unknown;
+            }) => ({
+              fieldName: f.field_name,
+              percentage: toFloat(f.percentage) ?? 0,
+              programCount: toNum(f.program_count) ?? 0,
+            }),
+          )
+      : [];
+
+    const degreeLevels: {
+      level: string;
+      totalPrograms: number;
+      topTitles: string[];
+    }[] = Array.isArray(row.degree_levels)
+      ? row.degree_levels.map(
+          (d: {
+            level: string;
+            total_programs: unknown;
+            top_titles: unknown;
+          }) => ({
+            level: toStr(d.level) ?? "Other",
+            totalPrograms: toNum(d.total_programs) ?? 0,
+            topTitles: Array.isArray(d.top_titles)
+              ? d.top_titles.filter(Boolean)
+              : [],
+          }),
+        )
+      : [];
+
+    return {
+      unitid: toNum(row.unitid),
+      name: row.name ?? null,
+      location: toLocation(row.city, row.state),
+      tuitionInState: toFloat(row.tuition_in_state),
+      acceptanceRate: toFloat(row.admission_rate),
+      addedAt: row.added_at ?? null,
+      schoolUrl: normalizeUrl(row.school_url),
+      schoolType: toStr(row.school_type),
+      accreditor: toStr(row.accreditor),
+      academics: {
+        satRangeLow: sat25,
+        satRangeHigh: sat75,
+        graduationRate: toFloat(row.completion_rate),
+      },
+      cost: {
+        tuitionOutState: toFloat(row.tuition_out_state),
+        stickerPrice: toFloat(row.sticker_price),
+        avgDebt: toFloat(row.avg_debt),
+        debtIncomeRatio: toFloat(row.debt_income_ratio),
+      },
+      outcomes: {
+        // Prefer the exact selected-program figure over the school-wide
+        // average whenever a program filter matched this school.
+        programEarnings:
+          toFloat(row.sel_program_earnings) ?? toFloat(row.program_earnings),
+        avgSalary: toFloat(row.avg_salary),
+        roi20Yr: toFloat(row.roi_20yr),
+      },
+      programs: {
+        studentFacultyRatio: formatRatio(row.student_faculty_ratio),
+        repaymentSuccess: toFloat(row.repayment_success),
+        popularFields,
+        degreeLevels,
+        selectedProgram: row.sel_program_title
+          ? {
+              title: row.sel_program_title,
+              cipCode: toStr(row.sel_program_cip),
+              degreeLevelCategory: toStr(row.sel_program_degree_level),
+              credentialLevel: toNum(row.sel_program_credential_level),
+              earnings: toFloat(row.sel_program_earnings),
+            }
+          : null,
+      },
+    };
+  });
 }
 
 /**
@@ -295,9 +549,13 @@ router.post(
 );
 
 /**
- * GET /compare/selected
+ * GET /compare/selected?program=<title>
  * Returns the caller's current comparison set, enriched, each with addedAt
  * (earliest created_at for that unitid). Empty -> [].
+ *
+ * Optional `program` query param matches each school's own programs.title
+ * (ILIKE) and, when it hits, fills programs.selectedProgram with that exact
+ * program's CIP-level earnings instead of a generic top-3 title sample.
  */
 router.get(
   "/selected",
@@ -306,7 +564,8 @@ router.get(
     try {
       const userId = await resolveUserId(req.userId as string);
       if (!userId) return res.status(404).json({ error: "User not found" });
-      return res.json(await getSelectedEnriched(userId));
+      const program = toStr(req.query.program) ?? undefined;
+      return res.json(await getSelectedEnriched(userId, program));
     } catch (error) {
       console.error("Get compare selection error:", error);
       return res.status(500).json({

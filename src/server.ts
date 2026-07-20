@@ -25,6 +25,8 @@ import savedCollegesRoute from "./routes/savedColleges";
 import degreeLevelsRoute from "./routes/degreeLevels";
 import reportRoute from "./routes/report";
 import athleticsRoute from "./routes/athletics";
+import jwt from "jsonwebtoken";
+import pool from "./db/client";
 
 const PORT = process.env.PORT || 8000;
 console.log("SERVER.TS EXECUTED");
@@ -59,15 +61,39 @@ app.use("/athletics", athleticsRoute);
 //   console.log("HEADERS:", req.headers);
 //   res.json({ status: "ok", headers: req.headers });
 // });
-// app.get("/get-token", (req, res) => {
-//   const token = jwt.sign(
-//     { userId: 1, role: "admin" }, // payload
-//     process.env.JWT_SECRET as string,
-//     { expiresIn: "1h" },
-//   );
+// LOCAL DEV ONLY — mints an app JWT without going through Firebase, so
+// Postman can get a Bearer token for verifyToken-protected routes.
+// GET /get-token            → token for the first active usdusers row
+// GET /get-token?uid=<uid>  → token for a specific firebase_uid
+app.get("/get-token", async (req, res) => {
+  try {
+    const uidParam =
+      typeof req.query.uid === "string" ? req.query.uid : undefined;
 
-//   res.json({ token });
-// });
+    let firebaseUid = uidParam;
+    if (!firebaseUid) {
+      const result = await pool.query<{ firebase_uid: string }>(
+        "SELECT firebase_uid FROM usdusers WHERE is_active = true ORDER BY id LIMIT 1",
+      );
+      if (result.rows.length === 0) {
+        res.status(404).json({ error: "No active usdusers found" });
+        return;
+      }
+      firebaseUid = result.rows[0].firebase_uid;
+    }
+
+    const token = jwt.sign(
+      { sub: firebaseUid },
+      process.env.JWT_SECRET as string,
+      { expiresIn: "1h" },
+    );
+
+    res.json({ token, firebase_uid: firebaseUid });
+  } catch (err) {
+    console.error("[/get-token] error:", err);
+    res.status(500).json({ error: "Failed to mint token" });
+  }
+});
 app.get("/", (req, res) =>
   res.json({ status: "ok", message: "API is running" }),
 );
