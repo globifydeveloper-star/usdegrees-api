@@ -21,13 +21,23 @@ CREATE INDEX IF NOT EXISTS idx_programs_unitid_lower_title
   ON programs (unitid, lower(title), credential_level, credential_title);
 
 -- ─────────────────────────────────────────────────────────────────
--- earnings_against_courses table
+-- earnings_against_courses table (LEGACY — kept for rollback only;
+-- earnings_against_courses_merged is the source of truth as of the
+-- earnings-data cutover. Do not drop this index or the table yet.)
 -- ─────────────────────────────────────────────────────────────────
 
 -- Already exists: idx_eac_unitid, idx_eac_cip, idx_eac_credential
 -- Add composite for LATERAL join (unitid + cip_code + credential_level + grad_cohort DESC)
 CREATE INDEX IF NOT EXISTS idx_eac_lateral_lookup
   ON earnings_against_courses (unitid, cip_code, credential_level, grad_cohort DESC);
+
+-- ─────────────────────────────────────────────────────────────────
+-- earnings_against_courses_merged table (current source of truth)
+-- ─────────────────────────────────────────────────────────────────
+
+-- Already exists in the DB: idx_eac_merged_unitid_cip (unitid, cip_code)
+--                            idx_eac_merged_lateral_lookup (unitid, cip_code, credential_level, grad_cohort DESC)
+-- No action needed — confirmed via information_schema during the cutover.
 
 -- ─────────────────────────────────────────────────────────────────
 -- admissions / completion (already have PKs on unitid — no extra needed)

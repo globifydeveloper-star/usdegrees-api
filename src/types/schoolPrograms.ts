@@ -1,5 +1,7 @@
 // routes/schoollevelsearch/types.ts
 
+import { EarningsFillMethod, RawEarningsFillMethod } from "./earnings";
+
 // ── API #1 – Autocomplete ─────────────────────────────────────────────────────
 
 export interface AutocompleteRow {
@@ -38,8 +40,9 @@ export interface ProgramSearchRow {
   admission_rate: number | null;
   // completion
   emp_factor: number | null;
-  // earnings_against_courses
+  // earnings_against_courses_merged
   year_5: number | null;
+  year_5_method: RawEarningsFillMethod;
 }
 
 export interface ProgramSearchResponse {
@@ -63,6 +66,7 @@ export interface ProgramSearchResponse {
   };
   earnings: {
     year_5: number | null;
+    year_5_method: EarningsFillMethod;
   };
 }
 

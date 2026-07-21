@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { SearchQueryParams, SearchResult } from "../types/search-details";
+import { normalizeEarningsFillMethod } from "../types/earnings";
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -32,7 +33,7 @@ function safeNum(value: unknown): number | null {
 * GET /search
 *
 * Returns enriched program records joined across schools, admissions,
-* completion, and earnings_against_courses tables.
+* completion, and earnings_against_courses_merged tables.
 *
 * Query params:
 *  - credential_title  exact match on programs.credential_title
@@ -85,6 +86,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     -- earnings (nullable)
     ec.year_5                   AS earnings_year_5,
+    ec.year_5_method            AS earnings_year_5_method,
 
     -- roi (nullable)
     roi_data.roi_20yr          AS roi_20yr
@@ -103,8 +105,10 @@ router.get("/", async (req: Request, res: Response) => {
   LEFT JOIN completion co
     ON p.unitid = co.unitid
 
-  /* Earnings data keyed by school + program (cip_code) */
-  LEFT JOIN earnings_against_courses ec
+  /* Earnings data keyed by school + program (cip_code).
+     earnings_against_courses_merged is the source of truth; rollback to
+     earnings_against_courses (raw, no fill-method tracking) if needed. */
+  LEFT JOIN earnings_against_courses_merged ec
     ON p.unitid   = ec.unitid
    AND p.cip_code = replace(ec.cip_code, '.', '')
 
@@ -163,6 +167,7 @@ router.get("/", async (req: Request, res: Response) => {
         school_max_range: safeNum(row.school_max_range),
         emp_factor: safeNum(row.emp_factor),
         earnings_year_5: safeNum(row.earnings_year_5),
+        earnings_year_5_method: normalizeEarningsFillMethod(row.earnings_year_5_method),
         roi_20yr: safeNum(row.roi_20yr),
       }))
     );

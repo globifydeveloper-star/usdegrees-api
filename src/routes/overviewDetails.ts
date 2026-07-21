@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { OverviewRow, OverviewResponse } from "../types/overview";
+import { normalizeEarningsFillMethod } from "../types/earnings";
 
 // ---------------------------------------------------------------------------
 // Helper — safely coerce nullable numeric DB values
@@ -73,7 +74,8 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
   // students                 → LEFT JOIN on unitid                (school-level)
   // completion               → LEFT JOIN on unitid                (school-level)
   // costs                    → LEFT JOIN on unitid                (school-level)
-  // earnings_against_courses → LEFT JOIN on unitid + cip_code     (program-level)
+  // earnings_against_courses_merged → LEFT JOIN on unitid + cip_code (program-level;
+  //                             filled values + per-year fill-method tracking)
   // programs                 → LEFT JOIN LATERAL on unitid + cip_code matching credential_title preference
   // program_descriptions     → LEFT JOIN LATERAL on unitid + cip_code matching program credential_title
   // roi                      → LEFT JOIN on unitid + credential_level
@@ -122,6 +124,9 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       ec.year_1                   AS year_1,
       ec.year_10                  AS year_10,
       ec.growth_rate              AS growth_rate,
+      ec.year_1_method            AS year_1_method,
+      ec.year_10_method           AS year_10_method,
+      ec.avg_salary               AS avg_salary,
 
       -- ── ROI (keyed by unitid + credential_level from programs table) ───
       r.roi_20yr                  AS roi_20yr,
@@ -165,8 +170,11 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     LEFT JOIN costs c
       ON c.unitid = s.unitid
 
-    /* Earnings — program level: unitid + cip_code */
-    LEFT JOIN earnings_against_courses ec
+    /* Earnings — program level: unitid + cip_code.
+       Rollback: swap earnings_against_courses_merged -> earnings_against_courses
+       and drop the *_method / avg_salary columns above if the merged data
+       needs to be reverted. */
+    LEFT JOIN earnings_against_courses_merged ec
       ON ec.unitid   = s.unitid
      AND replace(ec.cip_code, '.', '') = $2
 
@@ -254,6 +262,9 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
         year_1: safeNum(row.year_1),
         year_10: safeNum(row.year_10),
         growth_rate: safeNum(row.growth_rate),
+        year_1_method: normalizeEarningsFillMethod(row.year_1_method),
+        year_10_method: normalizeEarningsFillMethod(row.year_10_method),
+        avg_salary: safeNum(row.avg_salary),
       },
       roi: {
         roi_20yr: safeNum(row.roi_20yr),

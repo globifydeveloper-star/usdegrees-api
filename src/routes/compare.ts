@@ -4,6 +4,7 @@ import { verifyToken } from "../middleware/auth";
 import { AuthRequest } from "../types/user";
 import { getAthleticsProfile } from "../services/athletics.service";
 import { AthleticsProfile } from "../types/athletics";
+import { EarningsFillMethod, normalizeEarningsFillMethod } from "../types/earnings";
 
 const router = Router();
 
@@ -133,8 +134,8 @@ interface SelectedItem {
     debtIncomeRatio: number | null; // debt_income_ratio.debt_income_ratio
   };
   outcomes: {
-    programEarnings: number | null; // AVG(earnings_against_courses.year_10) across the school's programs
-    avgSalary: number | null; // roi.avg_salary (best roi_20yr row)
+    programEarnings: number | null; // AVG(earnings_against_courses_merged.year_10) across the school's programs
+    avgSalary: number | null; // AVG(earnings_against_courses_merged.avg_salary) across the school's programs — "Median Graduate Salary" in the compare UI
     roi20Yr: number | null; // roi.roi_20yr
   };
   programs: {
@@ -155,7 +156,8 @@ interface SelectedItem {
       cipCode: string | null;
       degreeLevelCategory: string | null;
       credentialLevel: number | null;
-      earnings: number | null; // earnings_against_courses.year_10 for this exact program
+      earnings: number | null; // earnings_against_courses_merged.year_10 for this exact program
+      earningsMethod: EarningsFillMethod | null; // fill method for that year_10 value
     } | null; // set only when a `program` filter is passed and the school offers a matching title
   };
 }
@@ -288,7 +290,7 @@ async function getSelectedEnriched(
         c.sticker_price_by_api AS sticker_price,
         debt.avg_debt          AS avg_debt,
         debt.debt_income_ratio AS debt_income_ratio,
-        roi.avg_salary         AS avg_salary,
+        earnSalary.avg_salary  AS avg_salary,
         roi.roi_20yr           AS roi_20yr,
         earn.avg_year10        AS program_earnings,
         stu.student_faculty_ratio AS student_faculty_ratio,
@@ -299,7 +301,8 @@ async function getSelectedEnriched(
         selProg.cip_code        AS sel_program_cip,
         selProg.credential_level AS sel_program_credential_level,
         selProg.degree_level_category AS sel_program_degree_level,
-        progEarn.year_10        AS sel_program_earnings
+        progEarn.year_10        AS sel_program_earnings,
+        progEarn.year_10_method AS sel_program_earnings_method
      FROM sel
      JOIN added ON added.unitid = sel.unitid
      LEFT JOIN schools s ON s.unitid = sel.unitid
@@ -323,14 +326,23 @@ async function getSelectedEnriched(
           FROM debt_income_ratio WHERE unitid = sel.unitid LIMIT 1
      ) debt ON TRUE
      LEFT JOIN LATERAL (
-        SELECT avg_salary, roi_20yr FROM roi
+        SELECT roi_20yr FROM roi
          WHERE unitid = sel.unitid
          ORDER BY roi_20yr DESC NULLS LAST LIMIT 1
      ) roi ON TRUE
      LEFT JOIN LATERAL (
-        SELECT AVG(year_10) AS avg_year10 FROM earnings_against_courses
+        -- earnings_against_courses_merged is the source of truth; rollback
+        -- to earnings_against_courses (raw, no fill-method tracking) if needed.
+        SELECT AVG(year_10) AS avg_year10 FROM earnings_against_courses_merged
          WHERE unitid = sel.unitid AND year_10 IS NOT NULL
      ) earn ON TRUE
+     LEFT JOIN LATERAL (
+        -- Median Graduate Salary — school-wide average of
+        -- earnings_against_courses_merged.avg_salary across the school's
+        -- programs (same aggregation shape as the earn CTE above for year_10).
+        SELECT AVG(avg_salary) AS avg_salary FROM earnings_against_courses_merged
+         WHERE unitid = sel.unitid AND avg_salary IS NOT NULL
+     ) earnSalary ON TRUE
      LEFT JOIN LATERAL (
         SELECT student_faculty_ratio FROM students WHERE unitid = sel.unitid LIMIT 1
      ) stu ON TRUE
@@ -384,7 +396,9 @@ async function getSelectedEnriched(
          LIMIT 1
      ) selProg ON TRUE
      LEFT JOIN LATERAL (
-        SELECT year_10 FROM earnings_against_courses
+        -- earnings_against_courses_merged is the source of truth; rollback
+        -- to earnings_against_courses (raw, no fill-method tracking) if needed.
+        SELECT year_10, year_10_method FROM earnings_against_courses_merged
          WHERE unitid = sel.unitid
            AND selProg.cip_code IS NOT NULL
            AND replace(cip_code, '.', '') = replace(selProg.cip_code, '.', '')
@@ -489,6 +503,10 @@ async function getSelectedEnriched(
               degreeLevelCategory: toStr(row.sel_program_degree_level),
               credentialLevel: toNum(row.sel_program_credential_level),
               earnings: toFloat(row.sel_program_earnings),
+              earningsMethod:
+                toFloat(row.sel_program_earnings) != null
+                  ? normalizeEarningsFillMethod(row.sel_program_earnings_method)
+                  : null,
             }
           : null,
       },

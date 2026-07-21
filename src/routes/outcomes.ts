@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { OutcomesRow, OutcomesResponse } from "../types/outcomes";
+import { normalizeEarningsFillMethod } from "../types/earnings";
 
 // ---------------------------------------------------------------------------
 // Helper — safely coerce nullable / non-finite numeric DB values
@@ -55,7 +56,11 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
   //
   // Join strategy
   // ─────────────────────────────────────────────────────────────────────────
-  // earnings_against_courses → driving table, filtered by unitid + cip_code
+  // earnings_against_courses_merged → driving table, filtered by unitid + cip_code.
+  //                            Filled values with per-year fill-method tracking;
+  //                            source of truth as of the merged-table cutover.
+  //                            (Old raw table: see earnings_against_courses
+  //                            block below, kept for rollback.)
   //
   // completion               → LEFT JOIN on unitid ONLY.
   //                            The completion table has no cip_code column
@@ -72,6 +77,11 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       ec.year_1                       AS year_1,
       ec.year_5                       AS year_5,
       ec.year_10                      AS year_10,
+      ec.year_1_method                AS year_1_method,
+      ec.year_5_method                AS year_5_method,
+      ec.year_10_method               AS year_10_method,
+      ec.avg_salary                   AS avg_salary,
+      ec.growth_rate                  AS growth_rate,
 
       -- ── Employment factor (school-level) ──────────────────────────────
       -- completion table is keyed by unitid only — no cip_code column exists.
@@ -80,7 +90,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       -- ── Debt-to-income ratio (program-level) ──────────────────────────
       di.debt_income_ratio            AS debt_income_ratio
 
-    FROM earnings_against_courses ec
+    FROM earnings_against_courses_merged ec
 
     /* completion is school-level only — join on unitid alone */
     LEFT JOIN completion co
@@ -96,6 +106,18 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
        has multiple rows per (unitid, cip_code) */
     LIMIT 1
   `;
+
+  // ── OLD raw-table query — kept for rollback, not executed ────────────────
+  // const legacySql = `
+  //   SELECT
+  //     ec.year_1 AS year_1, ec.year_5 AS year_5, ec.year_10 AS year_10,
+  //     co.emp_factor AS emp_factor, di.debt_income_ratio AS debt_income_ratio
+  //   FROM earnings_against_courses ec
+  //   LEFT JOIN completion co ON co.unitid = ec.unitid
+  //   LEFT JOIN debt_income_ratio di ON di.unitid = ec.unitid
+  //   WHERE ec.unitid = $1 AND replace(ec.cip_code, '.', '') = $2
+  //   LIMIT 1
+  // `;
 
   const params = [unitidNum, cleanCip];
 
@@ -119,6 +141,11 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
         year_1: safeNum(row.year_1),
         year_5: safeNum(row.year_5),
         year_10: safeNum(row.year_10),
+        year_1_method: normalizeEarningsFillMethod(row.year_1_method),
+        year_5_method: normalizeEarningsFillMethod(row.year_5_method),
+        year_10_method: normalizeEarningsFillMethod(row.year_10_method),
+        avg_salary: safeNum(row.avg_salary),
+        growth_rate: safeNum(row.growth_rate),
       },
       completion: {
         emp_factor: safeNum(row.emp_factor),

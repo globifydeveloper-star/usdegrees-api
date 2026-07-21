@@ -1,3 +1,5 @@
+import { EarningsFillMethod, RawEarningsFillMethod } from "./earnings";
+
 // ---------------------------------------------------------------------------
 // Types & Interfaces
 // ---------------------------------------------------------------------------
@@ -41,10 +43,13 @@ export interface OverviewRow {
   // completion
   completion_rate: number | null;
 
-  // earnings_against_courses (keyed by unitid + cip_code)
+  // earnings_against_courses_merged (keyed by unitid + cip_code)
   year_1: number | null;
   year_10: number | null;
   growth_rate: number | null;
+  year_1_method: RawEarningsFillMethod;
+  year_10_method: RawEarningsFillMethod;
+  avg_salary: number | null;
 
   // roi (keyed by unitid + credential_level)
   roi_20yr: number | null;
@@ -96,6 +101,9 @@ export interface OverviewResponse {
     year_1: number | null;
     year_10: number | null;
     growth_rate: number | null;
+    year_1_method: EarningsFillMethod;
+    year_10_method: EarningsFillMethod;
+    avg_salary: number | null;
   };
   roi: {
     roi_20yr: number | null;

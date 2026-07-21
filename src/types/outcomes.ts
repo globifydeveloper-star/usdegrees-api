@@ -1,3 +1,5 @@
+import { EarningsFillMethod, RawEarningsFillMethod } from "./earnings";
+
 // ---------------------------------------------------------------------------
 // Types & Interfaces
 // ---------------------------------------------------------------------------
@@ -8,10 +10,15 @@
  * unitid / cip_code combinations.
  */
 export interface OutcomesRow {
-  // earnings_against_courses (program-level: unitid + cip_code)
+  // earnings_against_courses_merged (program-level: unitid + cip_code)
   year_1: number | null;
   year_5: number | null;
   year_10: number | null;
+  year_1_method: RawEarningsFillMethod;
+  year_5_method: RawEarningsFillMethod;
+  year_10_method: RawEarningsFillMethod;
+  avg_salary: number | null;
+  growth_rate: number | null;
 
   // completion (school-level: unitid only — no cip_code column in this table)
   emp_factor: number | null;
@@ -29,6 +36,11 @@ export interface OutcomesResponse {
     year_1: number | null;
     year_5: number | null;
     year_10: number | null;
+    year_1_method: EarningsFillMethod;
+    year_5_method: EarningsFillMethod;
+    year_10_method: EarningsFillMethod;
+    avg_salary: number | null;
+    growth_rate: number | null;
   };
   completion: {
     emp_factor: number | null;

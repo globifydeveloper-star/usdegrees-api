@@ -2,11 +2,12 @@
 // GET /schools/:unitid/programs/search?title=Computer%20Science&credential_title=Bachelor's%20Degree
 //
 // Returns complete program details for a specific school + program + degree level.
-// Joins: schools, admissions, completion, earnings_against_courses (most recent cohort).
+// Joins: schools, admissions, completion, earnings_against_courses_merged (most recent cohort).
 
 import { Router, Request, Response } from "express";
 import pool from "../../db/client";
 import { ProgramSearchRow, ProgramSearchResponse } from "../../types/schoolPrograms";
+import { normalizeEarningsFillMethod } from "../../types/earnings";
 
 const router = Router({ mergeParams: true });
 
@@ -31,8 +32,10 @@ router.get("/", async (req: Request, res: Response) => {
   }
 
   try {
-    // earnings_against_courses has multiple rows per program (one per grad_cohort).
+    // earnings_against_courses_merged has multiple rows per program (one per grad_cohort).
     // LATERAL JOIN picks the single most recent cohort row for year_5 salary.
+    // Rollback: swap earnings_against_courses_merged -> earnings_against_courses
+    // and drop year_5_method if the merged data needs to be reverted.
     const sql = `
       SELECT
         -- ── School ──────────────────────────────────────────────────
@@ -54,7 +57,8 @@ router.get("/", async (req: Request, res: Response) => {
         comp.emp_factor,
 
         -- ── Earnings: year_5 from most recent cohort ─────────────────
-        eac.year_5
+        eac.year_5,
+        eac.year_5_method
 
       FROM programs p
 
@@ -69,8 +73,8 @@ router.get("/", async (req: Request, res: Response) => {
 
       -- Pick the most recent cohort for this program's cip_code + credential_level
       LEFT JOIN LATERAL (
-        SELECT year_5
-        FROM   earnings_against_courses
+        SELECT year_5, year_5_method
+        FROM   earnings_against_courses_merged
         WHERE  unitid           = p.unitid
           AND  cip_code         = p.cip_code
           AND  credential_level = p.credential_level
@@ -123,6 +127,7 @@ router.get("/", async (req: Request, res: Response) => {
       },
       earnings: {
         year_5: r.year_5 != null ? Math.round(Number(r.year_5)) : null,
+        year_5_method: normalizeEarningsFillMethod(r.year_5_method),
       },
     };
 

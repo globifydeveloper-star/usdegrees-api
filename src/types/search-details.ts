@@ -1,3 +1,5 @@
+import { RawEarningsFillMethod } from "./earnings";
+
 export interface State {
   id: number;
   state_code: string;
@@ -32,6 +34,7 @@ export interface SearchResult {
   school_max_range: number | null;
   emp_factor: number | null;
   earnings_year_5: number | null;
+  earnings_year_5_method: RawEarningsFillMethod;
 
   roi_20yr: number | null;
   tuition_in_state: number | null;

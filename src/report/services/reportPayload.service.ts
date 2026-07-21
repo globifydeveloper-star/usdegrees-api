@@ -6,7 +6,7 @@
  *
  * Tables: usdusers, usdreports, schools, admissions,
  *         admission_disclosure_categories, net_price_public_income,
- *         net_price_private_income, earnings_against_courses, costs,
+ *         net_price_private_income, earnings_against_courses_merged, costs,
  *         debt_income_ratio, roi, programs
  * Utils:  calculateAdmissionFit (utils/admissionScore), analyzeRoi (utils/roi)
  *
@@ -22,6 +22,7 @@ import pool from "../../db/client";
 import type { C1LitePayload } from "./reportPrompt";
 import { calculateAdmissionFit } from "../utils/admissionScore";
 import { analyzeRoi } from "../utils/roi";
+import { normalizeEarningsFillMethod } from "../../types/earnings";
 
 // ---- vintage constants (no DB columns yet) -----------------------
 const NET_PRICE_VINTAGE = "2023–24 Scorecard";
@@ -111,7 +112,7 @@ async function fetchProgramEarnings(unitid: number, programCip?: string) {
   if (programCip) {
     const { rows } = await pool.query(
       `SELECT year_10, year_10_method, grad_cohort
-         FROM earnings_against_courses
+         FROM earnings_against_courses_merged
         WHERE unitid = $1 AND replace(cip_code, '.', '') = replace($2, '.', '') AND year_10 IS NOT NULL
         ORDER BY grad_cohort DESC LIMIT 1`,
       [unitid, programCip],
@@ -121,12 +122,12 @@ async function fetchProgramEarnings(unitid: number, programCip?: string) {
     return {
       earnings: data.year_10 != null ? Math.round(Number(data.year_10)) : null,
       vintage: data.grad_cohort ?? null,
-      method_flag: data.year_10_method ?? null,
+      method_flag: normalizeEarningsFillMethod(data.year_10_method),
     };
   }
   // Aggregate across the school's programs.
   const { rows } = await pool.query(
-    `SELECT year_10 FROM earnings_against_courses WHERE unitid = $1 AND year_10 IS NOT NULL`,
+    `SELECT year_10 FROM earnings_against_courses_merged WHERE unitid = $1 AND year_10 IS NOT NULL`,
     [unitid],
   );
   const vals = rows.map((r: { year_10: number | string }) => Number(r.year_10)).filter((v: number) => !Number.isNaN(v));
@@ -138,6 +139,25 @@ async function fetchProgramEarnings(unitid: number, programCip?: string) {
     method_flag: `aggregated year_10 across ${vals.length} programs`,
   };
 }
+
+// ── OLD raw-table query — kept for rollback, not executed ──────────────────
+// async function fetchProgramEarningsLegacy(unitid: number, programCip?: string) {
+//   if (programCip) {
+//     const { rows } = await pool.query(
+//       `SELECT year_10, year_10_method, grad_cohort
+//          FROM earnings_against_courses
+//         WHERE unitid = $1 AND replace(cip_code, '.', '') = replace($2, '.', '') AND year_10 IS NOT NULL
+//         ORDER BY grad_cohort DESC LIMIT 1`,
+//       [unitid, programCip],
+//     );
+//     ...
+//   }
+//   const { rows } = await pool.query(
+//     `SELECT year_10 FROM earnings_against_courses WHERE unitid = $1 AND year_10 IS NOT NULL`,
+//     [unitid],
+//   );
+//   ...
+// }
 
 // Sticker price + ROI supplementary blob.
 async function fetchCosts(unitid: number) {
