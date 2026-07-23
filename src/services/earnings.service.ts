@@ -49,14 +49,16 @@ export function sortCohortsDescending(
   );
 }
 
-const ESTIMATED_METHODS: EarningsFillMethod[] = [
-  "interpolated",
-  "extrapolated",
+const SKIPPED_METHODS: EarningsFillMethod[] = [
+  "skipped_future",
+  "skipped_no_anchor",
 ];
 
 /**
- * Waterfall: most recent user_reported → most recent interpolated/extrapolated
- * → most recent low_confidence → null. Rows are assumed pre-sorted descending.
+ * Recency-first: the most recent cohort with any usable (non-skipped) value
+ * wins, regardless of whether that value is reported or generated. Method
+ * quality is surfaced honestly via the returned `method`, not used to
+ * override a fresher cohort. Rows are assumed pre-sorted descending.
  */
 export function pickBestCohort(
   rowsDescending: EarningsCohortRow[],
@@ -65,22 +67,12 @@ export function pickBestCohort(
   const methodOf = (row: EarningsCohortRow) =>
     normalizeEarningsFillMethod(row[methodKey]);
 
-  const reported = rowsDescending.find(
-    (row) => methodOf(row) === "user_reported",
+  const usable = rowsDescending.find(
+    (row) => !SKIPPED_METHODS.includes(methodOf(row)),
   );
-  if (reported) return { row: reported, method: "user_reported" };
+  if (!usable) return null;
 
-  const estimated = rowsDescending.find((row) =>
-    ESTIMATED_METHODS.includes(methodOf(row)),
-  );
-  if (estimated) return { row: estimated, method: methodOf(estimated) };
-
-  const lowConfidence = rowsDescending.find(
-    (row) => methodOf(row) === "low_confidence",
-  );
-  if (lowConfidence) return { row: lowConfidence, method: "low_confidence" };
-
-  return null;
+  return { row: usable, method: methodOf(usable) };
 }
 
 export function resolveMetric(
@@ -97,6 +89,11 @@ export function resolveMetric(
   };
 }
 
+/**
+ * avg_salary rides the same recency-first year_5 resolution as resolveMetric
+ * (there is no separate avg_salary_method column). `basis_is_estimated`
+ * flags when the winning cohort's year_5 wasn't user_reported.
+ */
 export function resolveAvgSalary(
   rowsDescending: EarningsCohortRow[],
 ): EarningsAvgSalaryResolved | null {

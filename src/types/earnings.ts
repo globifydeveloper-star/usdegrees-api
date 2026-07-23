@@ -49,22 +49,6 @@ export interface EarningsYearValue {
 }
 
 /**
- * The single latest grad_cohort row for a program, reporting whichever of
- * year_1/year_5/year_10 that row actually has (recency of cohort wins over
- * which horizon is populated — this is deliberately NOT the same resolution
- * as EarningsMetricResolved/EarningsResolved above, which lets each horizon
- * pick its own best cohort independently). Used for the compare page's
- * single "average salary" figure, which must stay tied to one row so it can
- * be labeled "Class of {cohort}" rather than presented as an unqualified
- * average of a metric that doesn't chronologically exist yet for that class.
- */
-export interface EarningsLatestCohortValue {
-  value: number | null;
-  cohort: string;
-  method: EarningsFillMethod;
-}
-
-/**
  * A single year_1 / year_5 / year_10 figure resolved across all grad_cohort
  * rows for a program, independent of whichever cohort backs the other two
  * metrics. `cohort` records which grad_cohort the value was pulled from.
@@ -76,10 +60,10 @@ export interface EarningsMetricResolved {
 }
 
 /**
- * avg_salary is anchored to the same cohort-selection waterfall used for
+ * avg_salary is anchored to the same recency-first cohort selection used for
  * year_5 (there is no separate avg_salary_method column in the source
- * table). `basis_is_estimated` is true when no cohort had a user_reported
- * year_5 and the anchor fell back to interpolated/extrapolated/low_confidence.
+ * table). `basis_is_estimated` is true when the winning cohort's year_5
+ * value was interpolated/extrapolated/low_confidence rather than user_reported.
  */
 export interface EarningsAvgSalaryResolved {
   value: number | null;
@@ -92,10 +76,11 @@ export interface EarningsAvgSalaryResolved {
  * Per-metric, cohort-aware resolution of a program's earnings across every
  * grad_cohort row on file — see earnings.service.ts#getEarningsForProgram.
  *
- * Each of year_1/year_5/year_10 is resolved independently: the most recent
- * cohort with a user_reported value wins; failing that, the most recent
- * interpolated/extrapolated cohort; failing that, the most recent
- * low_confidence cohort; null if nothing usable exists anywhere.
+ * Each of year_1/year_5/year_10 is resolved independently, recency-first:
+ * the most recent cohort with any usable (non-skipped) value wins, whether
+ * that value is user_reported, interpolated, extrapolated, or
+ * low_confidence — method quality is surfaced honestly via `method`, not
+ * used to override a fresher cohort. Null if nothing usable exists anywhere.
  *
  * `skipped_future` / `skipped_no_anchor` are never selected (their value is
  * always null in the source data) but are surfaced as the method on the
