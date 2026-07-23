@@ -61,6 +61,7 @@ export interface OverviewRow {
   program_cip_code: string | null;
   program_title: string | null;
   program_credential_title: string | null;
+  program_credential_level: number | null;
   program_description: string | null;
 }
 
@@ -113,6 +114,7 @@ export interface OverviewResponse {
     cip_code: string | null;
     title: string | null;
     credential_title: string | null;
+    credential_level: number | null;
     program_description: string | null;
   } | null;
 }

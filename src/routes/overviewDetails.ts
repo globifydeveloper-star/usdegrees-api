@@ -138,6 +138,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       p.cip_code                  AS program_cip_code,
       p.title                     AS program_title,
       p.credential_title          AS program_credential_title,
+      p.credential_level          AS program_credential_level,
       pd.program_description      AS program_description
 
     FROM schools s
@@ -275,6 +276,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
             cip_code: row.program_cip_code,
             title: row.program_title ?? null,
             credential_title: row.program_credential_title ?? null,
+            credential_level: safeNum(row.program_credential_level),
             program_description: row.program_description ?? null,
           }
         : null,

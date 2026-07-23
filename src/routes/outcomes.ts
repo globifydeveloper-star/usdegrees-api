@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { OutcomesRow, OutcomesResponse } from "../types/outcomes";
 import { normalizeEarningsFillMethod } from "../types/earnings";
+import { getEarningsForProgram } from "../services/earnings.service";
 
 // ---------------------------------------------------------------------------
 // Helper — safely coerce nullable / non-finite numeric DB values
@@ -50,7 +51,11 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     return;
   }
 
-  const cleanCip = cipCode.replace(/\./g, "").trim().padStart(4, "0").substring(0, 4);
+  const cleanCip = cipCode
+    .replace(/\./g, "")
+    .trim()
+    .padStart(4, "0")
+    .substring(0, 4);
 
   // ── SQL ──────────────────────────────────────────────────────────────────
   //
@@ -135,6 +140,20 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
 
     const row = rows[0];
 
+    // Resolve credential_level so earnings can be pulled per-metric across
+    // every grad_cohort on file, not just the single (arbitrary) row above.
+    const programResult = await pool.query<{ credential_level: number }>(
+      `SELECT credential_level FROM programs
+        WHERE unitid = $1 AND replace(cip_code, '.', '') = $2
+        LIMIT 1`,
+      [unitidNum, cleanCip],
+    );
+    const credentialLevel = programResult.rows[0]?.credential_level ?? null;
+    const earningsResolved =
+      credentialLevel != null
+        ? await getEarningsForProgram(unitidNum, cleanCip, credentialLevel)
+        : null;
+
     // ── Shape nested response ─────────────────────────────────────────────
     const response: OutcomesResponse = {
       earnings: {
@@ -147,6 +166,9 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
         avg_salary: safeNum(row.avg_salary),
         growth_rate: safeNum(row.growth_rate),
       },
+      // Additive, backward-compatible: per-metric cohort-aware resolution.
+      // Existing consumers of `earnings` above are unaffected.
+      earnings_resolved: earningsResolved,
       completion: {
         emp_factor: safeNum(row.emp_factor),
       },

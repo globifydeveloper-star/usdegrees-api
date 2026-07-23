@@ -84,9 +84,10 @@ router.get("/", async (req: Request, res: Response) => {
     -- completion (nullable)
     co.emp_factor               AS emp_factor,
 
-    -- earnings (nullable)
+    -- earnings (nullable, resolved to a single row per program key — see ec below)
     ec.year_5                   AS earnings_year_5,
     ec.year_5_method            AS earnings_year_5_method,
+    ec.grad_cohort               AS earnings_year_5_cohort,
 
     -- roi (nullable)
     roi_data.roi_20yr          AS roi_20yr
@@ -105,12 +106,35 @@ router.get("/", async (req: Request, res: Response) => {
   LEFT JOIN completion co
     ON p.unitid = co.unitid
 
-  /* Earnings data keyed by school + program (cip_code).
+  /* Earnings — earnings_against_courses_merged has up to one row per
+     grad_cohort for a given (unitid, cip_code, credential_level), so a plain
+     JOIN fans out into one duplicate result row per cohort (the original bug
+     here: the same program appeared once per grad_cohort, each with a
+     different year_5 value). This LATERAL resolves to exactly one row per
+     program key BEFORE it reaches the result set, using the same
+     reported → interpolated/extrapolated → low_confidence waterfall (and
+     most-recent-cohort-within-tier tiebreak) as getEarningsForProgram() in
+     earnings.service.ts, so this endpoint's figure never disagrees with
+     /outcomes for the same program.
      earnings_against_courses_merged is the source of truth; rollback to
      earnings_against_courses (raw, no fill-method tracking) if needed. */
-  LEFT JOIN earnings_against_courses_merged ec
-    ON p.unitid   = ec.unitid
-   AND p.cip_code = replace(ec.cip_code, '.', '')
+  LEFT JOIN LATERAL (
+    SELECT year_5, year_5_method, grad_cohort
+    FROM earnings_against_courses_merged e
+    WHERE e.unitid = p.unitid
+      AND replace(e.cip_code, '.', '') = p.cip_code
+      AND e.credential_level = p.credential_level
+    ORDER BY
+      CASE COALESCE(e.year_5_method, 'user_reported')
+        WHEN 'user_reported' THEN 0
+        WHEN 'interpolated' THEN 1
+        WHEN 'extrapolated' THEN 1
+        WHEN 'low_confidence' THEN 2
+        ELSE 3
+      END,
+      e.grad_cohort DESC
+    LIMIT 1
+  ) ec ON TRUE
 
   /* ROI — exact credential_level match preferred, school-level fallback */
   LEFT JOIN LATERAL (
@@ -159,17 +183,22 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const { rows } = await pool.query<SearchResult>(sql, params);
     res.json(
-      rows.map((row) => ({
-        ...row,
-        unitid: safeNum(row.unitid),
-        admission_rate: safeNum(row.admission_rate),
-        school_min_range: safeNum(row.school_min_range),
-        school_max_range: safeNum(row.school_max_range),
-        emp_factor: safeNum(row.emp_factor),
-        earnings_year_5: safeNum(row.earnings_year_5),
-        earnings_year_5_method: normalizeEarningsFillMethod(row.earnings_year_5_method),
-        roi_20yr: safeNum(row.roi_20yr),
-      }))
+      rows.map((row) => {
+        const earningsYear5Method = normalizeEarningsFillMethod(row.earnings_year_5_method);
+        return {
+          ...row,
+          unitid: safeNum(row.unitid),
+          admission_rate: safeNum(row.admission_rate),
+          school_min_range: safeNum(row.school_min_range),
+          school_max_range: safeNum(row.school_max_range),
+          emp_factor: safeNum(row.emp_factor),
+          earnings_year_5: safeNum(row.earnings_year_5),
+          earnings_year_5_method: earningsYear5Method,
+          earnings_year_5_cohort: row.earnings_year_5_cohort ?? null,
+          earnings_year_5_basis_is_estimated: earningsYear5Method !== "user_reported",
+          roi_20yr: safeNum(row.roi_20yr),
+        };
+      })
     );
   } catch (err) {
     console.error("[/search] Query error:", (err as Error).message);

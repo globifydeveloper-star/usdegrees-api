@@ -1,4 +1,8 @@
-import { EarningsFillMethod, RawEarningsFillMethod } from "./earnings";
+import {
+  EarningsFillMethod,
+  EarningsResolved,
+  RawEarningsFillMethod,
+} from "./earnings";
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -42,6 +46,12 @@ export interface OutcomesResponse {
     avg_salary: number | null;
     growth_rate: number | null;
   };
+  /**
+   * Per-metric, cohort-aware resolution (see earnings.service.ts). Additive
+   * alongside `earnings` above — null when the program's credential_level
+   * couldn't be resolved from `programs`, not an error condition.
+   */
+  earnings_resolved: EarningsResolved | null;
   completion: {
     emp_factor: number | null;
   };

@@ -4,7 +4,10 @@ import { verifyToken } from "../middleware/auth";
 import { AuthRequest } from "../types/user";
 import { getAthleticsProfile } from "../services/athletics.service";
 import { AthleticsProfile } from "../types/athletics";
-import { EarningsFillMethod, normalizeEarningsFillMethod } from "../types/earnings";
+import {
+  EarningsLatestCohortValue,
+  normalizeEarningsFillMethod,
+} from "../types/earnings";
 
 const router = Router();
 
@@ -135,8 +138,18 @@ interface SelectedItem {
   };
   outcomes: {
     programEarnings: number | null; // AVG(earnings_against_courses_merged.year_10) across the school's programs
-    avgSalary: number | null; // AVG(earnings_against_courses_merged.avg_salary) across the school's programs — "Median Graduate Salary" in the compare UI
+    // "Median Graduate Salary" in the compare UI. When a `program` filter
+    // matched this school, anchored to the single latest grad_cohort row for
+    // that (unitid, cip_code, credential_level) — whichever of
+    // year_1/year_5/year_10 that row actually has, NOT a fallback to an
+    // older cohort with a "better" horizon populated. Otherwise (no program
+    // filter / no match) falls back to the school-wide AVG(avg_salary)
+    // across all programs, as a bare number.
+    avgSalary: EarningsLatestCohortValue | number | null;
     roi20Yr: number | null; // roi.roi_20yr
+  };
+  students: {
+    size: number | null; // students.size — total enrollment
   };
   programs: {
     studentFacultyRatio: string | null; // students.student_faculty_ratio, formatted "5:1"
@@ -156,8 +169,9 @@ interface SelectedItem {
       cipCode: string | null;
       degreeLevelCategory: string | null;
       credentialLevel: number | null;
-      earnings: number | null; // earnings_against_courses_merged.year_10 for this exact program
-      earningsMethod: EarningsFillMethod | null; // fill method for that year_10 value
+      // Latest-grad_cohort-anchored figure for this exact program — same
+      // resolution as outcomes.avgSalary above (see EarningsLatestCohortValue).
+      earnings: EarningsLatestCohortValue | null;
     } | null; // set only when a `program` filter is passed and the school offers a matching title
   };
 }
@@ -211,8 +225,54 @@ function toFloat(val: unknown): number | null {
 function formatRatio(val: unknown): string | null {
   const n = toFloat(val);
   if (n === null) return null;
-  const display = n < 10 ? n.toFixed(1).replace(/\.0$/, "") : Math.round(n).toString();
+  const display =
+    n < 10 ? n.toFixed(1).replace(/\.0$/, "") : Math.round(n).toString();
   return `${display}:1`;
+}
+
+/**
+ * Resolves the "average salary" figure for the single latest grad_cohort
+ * row of a program: prefer year_5 if that row has it, else year_1, else
+ * year_10 — but never look at any other row. Recency of cohort wins over
+ * which horizon happens to be populated (see EarningsLatestCohortValue).
+ */
+function pickLatestCohortValue(
+  row:
+    | {
+        grad_cohort: unknown;
+        year_1: unknown;
+        year_5: unknown;
+        year_10: unknown;
+        year_1_method: unknown;
+        year_5_method: unknown;
+        year_10_method: unknown;
+      }
+    | undefined,
+): EarningsLatestCohortValue | null {
+  if (!row || row.grad_cohort == null) return null;
+
+  const candidates: Array<
+    [
+      "year_5" | "year_1" | "year_10",
+      "year_5_method" | "year_1_method" | "year_10_method",
+    ]
+  > = [
+    ["year_5", "year_5_method"],
+    ["year_1", "year_1_method"],
+    ["year_10", "year_10_method"],
+  ];
+
+  for (const [valueKey, methodKey] of candidates) {
+    const value = toFloat(row[valueKey]);
+    if (value !== null) {
+      return {
+        value,
+        cohort: String(row.grad_cohort),
+        method: normalizeEarningsFillMethod(row[methodKey] as string | null),
+      };
+    }
+  }
+  return null;
 }
 
 function toLocation(city: unknown, state: unknown): string | null {
@@ -294,6 +354,7 @@ async function getSelectedEnriched(
         roi.roi_20yr           AS roi_20yr,
         earn.avg_year10        AS program_earnings,
         stu.student_faculty_ratio AS student_faculty_ratio,
+        stu.size                AS student_size,
         rep.repayment_success  AS repayment_success,
         fields.top_fields      AS top_fields,
         degLevels.degree_levels AS degree_levels,
@@ -302,7 +363,14 @@ async function getSelectedEnriched(
         selProg.credential_level AS sel_program_credential_level,
         selProg.degree_level_category AS sel_program_degree_level,
         progEarn.year_10        AS sel_program_earnings,
-        progEarn.year_10_method AS sel_program_earnings_method
+        progEarn.year_10_method AS sel_program_earnings_method,
+        progLatest.grad_cohort   AS sel_program_latest_cohort,
+        progLatest.year_1        AS sel_program_latest_year_1,
+        progLatest.year_5        AS sel_program_latest_year_5,
+        progLatest.year_10       AS sel_program_latest_year_10,
+        progLatest.year_1_method  AS sel_program_latest_year_1_method,
+        progLatest.year_5_method  AS sel_program_latest_year_5_method,
+        progLatest.year_10_method AS sel_program_latest_year_10_method
      FROM sel
      JOIN added ON added.unitid = sel.unitid
      LEFT JOIN schools s ON s.unitid = sel.unitid
@@ -344,7 +412,7 @@ async function getSelectedEnriched(
          WHERE unitid = sel.unitid AND avg_salary IS NOT NULL
      ) earnSalary ON TRUE
      LEFT JOIN LATERAL (
-        SELECT student_faculty_ratio FROM students WHERE unitid = sel.unitid LIMIT 1
+        SELECT student_faculty_ratio, size FROM students WHERE unitid = sel.unitid LIMIT 1
      ) stu ON TRUE
      LEFT JOIN LATERAL (
         SELECT repayment_success FROM repayment WHERE unitid = sel.unitid LIMIT 1
@@ -406,6 +474,22 @@ async function getSelectedEnriched(
          ORDER BY grad_cohort DESC
          LIMIT 1
      ) progEarn ON TRUE
+     LEFT JOIN LATERAL (
+        -- Single latest grad_cohort row for this exact (unitid, cip_code,
+        -- credential_level) — no filter on which year_N column is populated.
+        -- Recency of cohort wins over which horizon happens to be filled;
+        -- the app layer picks year_5 > year_1 > year_10, whichever this row has.
+        SELECT grad_cohort, year_1, year_5, year_10,
+               year_1_method, year_5_method, year_10_method
+          FROM earnings_against_courses_merged
+         WHERE unitid = sel.unitid
+           AND selProg.cip_code IS NOT NULL
+           AND replace(cip_code, '.', '') = replace(selProg.cip_code, '.', '')
+           AND selProg.credential_level IS NOT NULL
+           AND credential_level = selProg.credential_level
+         ORDER BY grad_cohort DESC
+         LIMIT 1
+     ) progLatest ON TRUE
      ORDER BY added.added_at ASC, sel.unitid ASC`,
     [userId, programParam],
   );
@@ -488,8 +572,24 @@ async function getSelectedEnriched(
         // average whenever a program filter matched this school.
         programEarnings:
           toFloat(row.sel_program_earnings) ?? toFloat(row.program_earnings),
-        avgSalary: toFloat(row.avg_salary),
+        // Anchored to the selected program's latest grad_cohort row when a
+        // program filter matched; otherwise the school-wide aggregate.
+        avgSalary:
+          row.sel_program_title != null
+            ? pickLatestCohortValue({
+                grad_cohort: row.sel_program_latest_cohort,
+                year_1: row.sel_program_latest_year_1,
+                year_5: row.sel_program_latest_year_5,
+                year_10: row.sel_program_latest_year_10,
+                year_1_method: row.sel_program_latest_year_1_method,
+                year_5_method: row.sel_program_latest_year_5_method,
+                year_10_method: row.sel_program_latest_year_10_method,
+              })
+            : toFloat(row.avg_salary),
         roi20Yr: toFloat(row.roi_20yr),
+      },
+      students: {
+        size: toNum(row.student_size),
       },
       programs: {
         studentFacultyRatio: formatRatio(row.student_faculty_ratio),
@@ -502,11 +602,15 @@ async function getSelectedEnriched(
               cipCode: toStr(row.sel_program_cip),
               degreeLevelCategory: toStr(row.sel_program_degree_level),
               credentialLevel: toNum(row.sel_program_credential_level),
-              earnings: toFloat(row.sel_program_earnings),
-              earningsMethod:
-                toFloat(row.sel_program_earnings) != null
-                  ? normalizeEarningsFillMethod(row.sel_program_earnings_method)
-                  : null,
+              earnings: pickLatestCohortValue({
+                grad_cohort: row.sel_program_latest_cohort,
+                year_1: row.sel_program_latest_year_1,
+                year_5: row.sel_program_latest_year_5,
+                year_10: row.sel_program_latest_year_10,
+                year_1_method: row.sel_program_latest_year_1_method,
+                year_5_method: row.sel_program_latest_year_5_method,
+                year_10_method: row.sel_program_latest_year_10_method,
+              }),
             }
           : null,
       },

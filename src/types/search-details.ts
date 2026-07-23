@@ -35,6 +35,8 @@ export interface SearchResult {
   emp_factor: number | null;
   earnings_year_5: number | null;
   earnings_year_5_method: RawEarningsFillMethod;
+  earnings_year_5_cohort: string | null;
+  earnings_year_5_basis_is_estimated?: boolean;
 
   roi_20yr: number | null;
   tuition_in_state: number | null;
