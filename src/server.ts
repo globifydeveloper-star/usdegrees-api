@@ -25,6 +25,7 @@ import savedCollegesRoute from "./routes/savedColleges";
 import degreeLevelsRoute from "./routes/degreeLevels";
 import reportRoute from "./routes/report";
 import athleticsRoute from "./routes/athletics";
+import popularCategoriesRoute from "./routes/popularCategories";
 import jwt from "jsonwebtoken";
 import pool from "./db/client";
 
@@ -57,6 +58,7 @@ app.use("/saved-colleges", savedCollegesRoute);
 app.use("/degree-levels", degreeLevelsRoute);
 app.use("/report", reportRoute);
 app.use("/athletics", athleticsRoute);
+app.use("/popular-categories", popularCategoriesRoute);
 // app.get("/check", (req, res) => {
 //   console.log("HEADERS:", req.headers);
 //   res.json({ status: "ok", headers: req.headers });
