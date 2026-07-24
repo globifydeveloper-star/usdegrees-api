@@ -10,6 +10,7 @@ import { getEarningsForProgram } from "../services/earnings.service";
 const router = Router();
 
 const MAX_COMPARE_ATHLETICS = 4;
+const MAX_COMPARE_MATRIX_ENTRIES = 5;
 
 interface CollegeDropdownItem {
   unitid: number;
@@ -693,6 +694,31 @@ interface MatrixEntry {
   credentialTitle: string | null;
 }
 
+/** Fetch the caller's current compare-matrix rows, camelCased. Empty -> []. */
+async function fetchMatrixEntries(userId: string): Promise<MatrixEntry[]> {
+  const { rows } = await pool.query<{
+    unitid: string;
+    cip_code: string | null;
+    credential_level: string | null;
+    program_name: string | null;
+    credential_title: string | null;
+  }>(
+    `SELECT unitid, cip_code, credential_level, program_name, credential_title
+       FROM compare_matrix_entries
+      WHERE user_id = $1
+      ORDER BY id ASC`,
+    [userId],
+  );
+
+  return rows.map((r) => ({
+    unitid: toNum(r.unitid) ?? 0,
+    cipCode: r.cip_code,
+    credentialLevel: r.credential_level,
+    programName: r.program_name,
+    credentialTitle: r.credential_title,
+  }));
+}
+
 /**
  * GET /compare/matrix
  * Returns the caller's current compare-matrix rows. Empty -> [].
@@ -705,29 +731,7 @@ router.get(
       const userId = await resolveUserId(req.userId as string);
       if (!userId) return res.status(404).json({ error: "User not found" });
 
-      const { rows } = await pool.query<{
-        unitid: string;
-        cip_code: string | null;
-        credential_level: string | null;
-        program_name: string | null;
-        credential_title: string | null;
-      }>(
-        `SELECT unitid, cip_code, credential_level, program_name, credential_title
-           FROM compare_matrix_entries
-          WHERE user_id = $1
-          ORDER BY id ASC`,
-        [userId],
-      );
-
-      return res.json(
-        rows.map((r) => ({
-          unitid: toNum(r.unitid) ?? 0,
-          cipCode: r.cip_code,
-          credentialLevel: r.credential_level,
-          programName: r.program_name,
-          credentialTitle: r.credential_title,
-        })),
-      );
+      return res.json(await fetchMatrixEntries(userId));
     } catch (error) {
       console.error("Get compare matrix error:", error);
       return res.status(500).json({
@@ -828,9 +832,496 @@ router.put(
   },
 );
 
+/**
+ * POST /compare/matrix/entry
+ * body { unitid, cipCode?, credentialLevel?, programName?, credentialTitle? }
+ * Upserts a single compare-matrix entry (dedupe key: unitid + cipCode +
+ * credentialLevel, null-safe). Atomic relative to other mutations on the
+ * same user's matrix — unlike PUT /matrix, safe for multiple independent UI
+ * surfaces to call concurrently without clobbering each other's rows.
+ * Enforces the MAX_COMPARE_MATRIX_ENTRIES cap on NEW entries only (updating
+ * an existing entry never counts against the cap).
+ * Response: the caller's full updated matrix.
+ */
+router.post(
+  "/matrix/entry",
+  verifyToken,
+  async (req: AuthRequest, res: Response<MatrixEntry[] | ApiErrorBody>) => {
+    try {
+      const userId = await resolveUserId(req.userId as string);
+      if (!userId) return res.status(404).json({ error: "User not found" });
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const unitid = toNum(body.unitid);
+      if (unitid === null || !Number.isInteger(unitid) || unitid <= 0) {
+        return res.status(400).json({ error: "A valid unitid is required" });
+      }
+      const cipCode = toStr(body.cipCode);
+      const credentialLevel = toStr(body.credentialLevel);
+      const programName = toStr(body.programName);
+      const credentialTitle = toStr(body.credentialTitle);
+
+      const client = await pool.connect();
+      let limitReached = false;
+      try {
+        await client.query("BEGIN");
+        // Serializes concurrent POSTs for the same user within this
+        // transaction so the cap check below can't race two inserts past
+        // MAX_COMPARE_MATRIX_ENTRIES (COUNT(*) can't itself take FOR UPDATE).
+        await client.query("SELECT pg_advisory_xact_lock($1::bigint)", [
+          userId,
+        ]);
+
+        const existing = await client.query<{ id: string }>(
+          `SELECT id FROM compare_matrix_entries
+            WHERE user_id = $1 AND unitid = $2
+              AND cip_code IS NOT DISTINCT FROM $3
+              AND credential_level IS NOT DISTINCT FROM $4
+            FOR UPDATE`,
+          [userId, unitid, cipCode, credentialLevel],
+        );
+
+        if (existing.rows.length > 0) {
+          await client.query(
+            `UPDATE compare_matrix_entries
+                SET program_name = $2, credential_title = $3
+              WHERE id = $1`,
+            [existing.rows[0].id, programName, credentialTitle],
+          );
+        } else {
+          const { rows: countRows } = await client.query<{ count: number }>(
+            "SELECT COUNT(*)::int AS count FROM compare_matrix_entries WHERE user_id = $1",
+            [userId],
+          );
+          if ((countRows[0]?.count ?? 0) >= MAX_COMPARE_MATRIX_ENTRIES) {
+            limitReached = true;
+          } else {
+            await client.query(
+              `INSERT INTO compare_matrix_entries
+                 (user_id, unitid, cip_code, credential_level, program_name, credential_title)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [
+                userId,
+                unitid,
+                cipCode,
+                credentialLevel,
+                programName,
+                credentialTitle,
+              ],
+            );
+          }
+        }
+
+        await client.query(limitReached ? "ROLLBACK" : "COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
+
+      if (limitReached) {
+        return res.status(409).json({
+          error: "Compare limit reached",
+          code: "COMPARE_LIMIT_REACHED",
+          details: `A maximum of ${MAX_COMPARE_MATRIX_ENTRIES} entries can be compared at once`,
+        });
+      }
+
+      return res.json(await fetchMatrixEntries(userId));
+    } catch (error) {
+      console.error("Upsert compare matrix entry error:", error);
+      return res.status(500).json({
+        error: "Failed to upsert compare matrix entry",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+/**
+ * DELETE /compare/matrix/entry/:unitid
+ * Removes EVERY compare-matrix entry for that college (used by surfaces
+ * that don't track a specific program). Response: the full updated matrix.
+ */
+router.delete(
+  "/matrix/entry/:unitid",
+  verifyToken,
+  async (req: AuthRequest, res: Response<MatrixEntry[] | ApiErrorBody>) => {
+    try {
+      const unitid = toNum(req.params.unitid);
+      if (unitid === null || !Number.isInteger(unitid) || unitid <= 0) {
+        return res
+          .status(400)
+          .json({ error: "A valid integer unitid is required" });
+      }
+
+      const userId = await resolveUserId(req.userId as string);
+      if (!userId) return res.status(404).json({ error: "User not found" });
+
+      await pool.query(
+        "DELETE FROM compare_matrix_entries WHERE user_id = $1 AND unitid = $2",
+        [userId, unitid],
+      );
+
+      return res.json(await fetchMatrixEntries(userId));
+    } catch (error) {
+      console.error("Remove compare matrix entries error:", error);
+      return res.status(500).json({
+        error: "Failed to remove compare matrix entries",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+/**
+ * DELETE /compare/matrix/entry/:unitid/:cipCode/:credentialLevel
+ * Removes one specific program entry (used by the compare page's own
+ * per-program remove). Response: the full updated matrix.
+ */
+router.delete(
+  "/matrix/entry/:unitid/:cipCode/:credentialLevel",
+  verifyToken,
+  async (req: AuthRequest, res: Response<MatrixEntry[] | ApiErrorBody>) => {
+    try {
+      const unitid = toNum(req.params.unitid);
+      if (unitid === null || !Number.isInteger(unitid) || unitid <= 0) {
+        return res
+          .status(400)
+          .json({ error: "A valid integer unitid is required" });
+      }
+      const cipCode = toStr(req.params.cipCode);
+      const credentialLevel = toStr(req.params.credentialLevel);
+
+      const userId = await resolveUserId(req.userId as string);
+      if (!userId) return res.status(404).json({ error: "User not found" });
+
+      await pool.query(
+        `DELETE FROM compare_matrix_entries
+          WHERE user_id = $1 AND unitid = $2
+            AND cip_code IS NOT DISTINCT FROM $3
+            AND credential_level IS NOT DISTINCT FROM $4`,
+        [userId, unitid, cipCode, credentialLevel],
+      );
+
+      return res.json(await fetchMatrixEntries(userId));
+    } catch (error) {
+      console.error("Remove compare matrix entry error:", error);
+      return res.status(500).json({
+        error: "Failed to remove compare matrix entry",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+/**
+ * Enriched compare-matrix rows, in the SAME shape as getSelectedEnriched's
+ * SelectedItem — one entry per compare_matrix_entries row (so the same
+ * college can appear more than once under different programs). Unlike
+ * getSelectedEnriched (which matches `programs.title` via ILIKE against a
+ * single ?program= query param), each row here resolves its own
+ * selectedProgram from its OWN cip_code/credential_level, so every row's
+ * program is resolved in one call — no per-program round trip needed.
+ */
+async function getMatrixEnriched(userId: string): Promise<SelectedItem[]> {
+  const { rows } = await pool.query(
+    `WITH entries AS (
+        SELECT id, unitid, cip_code, credential_level, created_at
+          FROM compare_matrix_entries
+         WHERE user_id = $1
+         ORDER BY id ASC
+     )
+     SELECT
+        entries.unitid          AS unitid,
+        entries.created_at      AS added_at,
+        s.name                 AS name,
+        s.city                 AS city,
+        s.state                AS state,
+        s.school_url           AS school_url,
+        s.accreditor           AS accreditor,
+        p.school_type          AS school_type,
+        ad.admission_rate      AS admission_rate,
+        ad.school_min_range    AS sat_low,
+        ad.school_max_range    AS sat_high,
+        ad.sat_p25_math        AS sat_p25_math,
+        ad.sat_p75_math        AS sat_p75_math,
+        ad.sat_p25_reading     AS sat_p25_reading,
+        ad.sat_p75_reading     AS sat_p75_reading,
+        comp.completion_rate   AS completion_rate,
+        c.tuition_in_state     AS tuition_in_state,
+        c.tuition_out_state    AS tuition_out_state,
+        c.sticker_price_by_api AS sticker_price,
+        debt.avg_debt          AS avg_debt,
+        debt.debt_income_ratio AS debt_income_ratio,
+        earnSalary.avg_salary  AS avg_salary,
+        roi.roi_20yr           AS roi_20yr,
+        earn.avg_year10        AS program_earnings,
+        stu.student_faculty_ratio AS student_faculty_ratio,
+        stu.size                AS student_size,
+        rep.repayment_success  AS repayment_success,
+        fields.top_fields      AS top_fields,
+        degLevels.degree_levels AS degree_levels,
+        selProg.title           AS sel_program_title,
+        selProg.cip_code        AS sel_program_cip,
+        selProg.credential_level AS sel_program_credential_level,
+        selProg.degree_level_category AS sel_program_degree_level,
+        progEarn.year_10        AS sel_program_earnings,
+        progEarn.year_10_method AS sel_program_earnings_method
+     FROM entries
+     LEFT JOIN schools s ON s.unitid = entries.unitid
+     LEFT JOIN LATERAL (
+        SELECT school_type FROM programs WHERE unitid = entries.unitid LIMIT 1
+     ) p ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT admission_rate, school_min_range, school_max_range,
+               sat_p25_math, sat_p75_math, sat_p25_reading, sat_p75_reading
+          FROM admissions WHERE unitid = entries.unitid LIMIT 1
+     ) ad ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT completion_rate FROM completion WHERE unitid = entries.unitid LIMIT 1
+     ) comp ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT tuition_in_state, tuition_out_state, sticker_price_by_api
+          FROM costs WHERE unitid = entries.unitid LIMIT 1
+     ) c ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT avg_debt, debt_income_ratio
+          FROM debt_income_ratio WHERE unitid = entries.unitid LIMIT 1
+     ) debt ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT roi_20yr FROM roi
+         WHERE unitid = entries.unitid
+         ORDER BY roi_20yr DESC NULLS LAST LIMIT 1
+     ) roi ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT AVG(year_10) AS avg_year10 FROM earnings_against_courses_merged
+         WHERE unitid = entries.unitid AND year_10 IS NOT NULL
+     ) earn ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT AVG(avg_salary) AS avg_salary FROM earnings_against_courses_merged
+         WHERE unitid = entries.unitid AND avg_salary IS NOT NULL
+     ) earnSalary ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT student_faculty_ratio, size FROM students WHERE unitid = entries.unitid LIMIT 1
+     ) stu ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT repayment_success FROM repayment WHERE unitid = entries.unitid LIMIT 1
+     ) rep ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT jsonb_agg(t.* ORDER BY t.percentage DESC) AS top_fields
+          FROM (
+             SELECT field_name, percentage, program_count FROM program_distribution
+              WHERE unitid = entries.unitid
+              ORDER BY percentage DESC LIMIT 5
+          ) t
+     ) fields ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+                 jsonb_build_object(
+                   'level', dl.degree_level_category,
+                   'total_programs', dl.total_programs,
+                   'top_titles', dl.top_titles
+                 )
+                 ORDER BY CASE dl.degree_level_category
+                            WHEN 'Undergraduate' THEN 1
+                            WHEN 'Graduate' THEN 2
+                            WHEN 'Professional' THEN 3
+                            ELSE 4
+                          END
+               ) AS degree_levels
+          FROM (
+             SELECT
+                p.degree_level_category,
+                COUNT(*) AS total_programs,
+                ARRAY(
+                   SELECT DISTINCT p2.title FROM programs p2
+                    WHERE p2.unitid = entries.unitid
+                      AND p2.degree_level_category = p.degree_level_category
+                    ORDER BY p2.title ASC LIMIT 3
+                ) AS top_titles
+             FROM programs p
+             WHERE p.unitid = entries.unitid
+             GROUP BY p.degree_level_category
+          ) dl
+     ) degLevels ON TRUE
+     LEFT JOIN LATERAL (
+        -- Match THIS row's own cip_code/credential_level (not a title ILIKE
+        -- against a single query param) so every row resolves independently
+        -- in this one query.
+        SELECT title, cip_code, credential_level, degree_level_category
+          FROM programs
+         WHERE unitid = entries.unitid
+           AND entries.cip_code IS NOT NULL
+           AND entries.credential_level IS NOT NULL
+           AND replace(cip_code, '.', '') = replace(entries.cip_code, '.', '')
+           AND credential_level::text = entries.credential_level
+         ORDER BY title ASC
+         LIMIT 1
+     ) selProg ON TRUE
+     LEFT JOIN LATERAL (
+        SELECT year_10, year_10_method FROM earnings_against_courses_merged
+         WHERE unitid = entries.unitid
+           AND selProg.cip_code IS NOT NULL
+           AND replace(cip_code, '.', '') = replace(selProg.cip_code, '.', '')
+           AND year_10 IS NOT NULL
+         ORDER BY grad_cohort DESC
+         LIMIT 1
+     ) progEarn ON TRUE
+     ORDER BY entries.id ASC`,
+    [userId],
+  );
+
+  const items = rows.map(async (row) => {
+    const sat25 =
+      toFloat(row.sat_low) ??
+      (row.sat_p25_math != null && row.sat_p25_reading != null
+        ? toFloat(row.sat_p25_math)! + toFloat(row.sat_p25_reading)!
+        : null);
+    const sat75 =
+      toFloat(row.sat_high) ??
+      (row.sat_p75_math != null && row.sat_p75_reading != null
+        ? toFloat(row.sat_p75_math)! + toFloat(row.sat_p75_reading)!
+        : null);
+
+    const popularFields: {
+      fieldName: string;
+      percentage: number;
+      programCount: number;
+    }[] = Array.isArray(row.top_fields)
+      ? row.top_fields
+          .filter((f: { field_name?: string }) => f?.field_name)
+          .map(
+            (f: {
+              field_name: string;
+              percentage: unknown;
+              program_count: unknown;
+            }) => ({
+              fieldName: f.field_name,
+              percentage: toFloat(f.percentage) ?? 0,
+              programCount: toNum(f.program_count) ?? 0,
+            }),
+          )
+      : [];
+
+    const degreeLevels: {
+      level: string;
+      totalPrograms: number;
+      topTitles: string[];
+    }[] = Array.isArray(row.degree_levels)
+      ? row.degree_levels.map(
+          (d: {
+            level: string;
+            total_programs: unknown;
+            top_titles: unknown;
+          }) => ({
+            level: toStr(d.level) ?? "Other",
+            totalPrograms: toNum(d.total_programs) ?? 0,
+            topTitles: Array.isArray(d.top_titles)
+              ? d.top_titles.filter(Boolean)
+              : [],
+          }),
+        )
+      : [];
+
+    const selUnitid = toNum(row.unitid);
+    const selCip = toStr(row.sel_program_cip);
+    const selCredentialLevel = toNum(row.sel_program_credential_level);
+    const selectedProgramEarnings =
+      row.sel_program_title != null &&
+      selUnitid != null &&
+      selCip != null &&
+      selCredentialLevel != null
+        ? (await getEarningsForProgram(selUnitid, selCip, selCredentialLevel))
+            .avg_salary
+        : null;
+
+    return {
+      unitid: toNum(row.unitid),
+      name: row.name ?? null,
+      location: toLocation(row.city, row.state),
+      tuitionInState: toFloat(row.tuition_in_state),
+      acceptanceRate: toFloat(row.admission_rate),
+      addedAt: row.added_at ?? null,
+      schoolUrl: normalizeUrl(row.school_url),
+      schoolType: toStr(row.school_type),
+      accreditor: toStr(row.accreditor),
+      academics: {
+        satRangeLow: sat25,
+        satRangeHigh: sat75,
+        graduationRate: toFloat(row.completion_rate),
+      },
+      cost: {
+        tuitionOutState: toFloat(row.tuition_out_state),
+        stickerPrice: toFloat(row.sticker_price),
+        avgDebt: toFloat(row.avg_debt),
+        debtIncomeRatio: toFloat(row.debt_income_ratio),
+      },
+      outcomes: {
+        programEarnings:
+          toFloat(row.sel_program_earnings) ?? toFloat(row.program_earnings),
+        avgSalary:
+          row.sel_program_title != null
+            ? selectedProgramEarnings
+            : toFloat(row.avg_salary),
+        roi20Yr: toFloat(row.roi_20yr),
+      },
+      students: {
+        size: toNum(row.student_size),
+      },
+      programs: {
+        studentFacultyRatio: formatRatio(row.student_faculty_ratio),
+        repaymentSuccess: toFloat(row.repayment_success),
+        popularFields,
+        degreeLevels,
+        selectedProgram: row.sel_program_title
+          ? {
+              title: row.sel_program_title,
+              cipCode: toStr(row.sel_program_cip),
+              degreeLevelCategory: toStr(row.sel_program_degree_level),
+              credentialLevel: toNum(row.sel_program_credential_level),
+              earnings: selectedProgramEarnings,
+            }
+          : null,
+      },
+    };
+  });
+
+  return Promise.all(items);
+}
+
+/**
+ * GET /compare/matrix/details
+ * Enriched details for the caller's compare-matrix rows, in the same shape
+ * as GET /compare/selected (tuition, acceptance rate, SAT range, cost,
+ * outcomes, programs.selectedProgram). Unlike /compare/selected, every row's
+ * selectedProgram is resolved from that row's OWN cipCode/credentialLevel in
+ * this single call — no per-program ?program= round trip needed.
+ */
+router.get(
+  "/matrix/details",
+  verifyToken,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = await resolveUserId(req.userId as string);
+      if (!userId) return res.status(404).json({ error: "User not found" });
+
+      return res.json(await getMatrixEnriched(userId));
+    } catch (error) {
+      console.error("Get compare matrix details error:", error);
+      return res.status(500).json({
+        error: "Failed to fetch compare matrix details",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
 interface ApiErrorBody {
   error: string;
   details?: string;
+  code?: string;
 }
 
 /**
