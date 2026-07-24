@@ -20,6 +20,8 @@
 import { Router, Request, Response } from "express";
 import { QueryResult } from "pg";
 import pool from "../db/client";
+import { verifyToken } from "../middleware/auth";
+import { AuthRequest } from "../types/user";
 
 import {
   ProgramsResponse,
@@ -216,6 +218,162 @@ ORDER BY
 // ─────────────────────────────────────────────
 
 const router = Router();
+
+interface RouteApiError {
+  error: string;
+  details?: string;
+}
+
+interface ProgramListItem {
+  title: string;
+  cip_code: string | null;
+  credential_level: number | null;
+  credential_title: string | null;
+}
+
+interface SchoolListItem {
+  unitid: number;
+  school_name: string;
+  city: string | null;
+  state: string | null;
+}
+
+/**
+ * GET /programs?credential_level=<1-8>&q=<search>&limit=<n>
+ * Distinct programs at that credential level, across every school,
+ * optionally keyword-searched by title. Powers the compare page's
+ * Credential -> Program -> College search-bar flow.
+ */
+router.get(
+  "/",
+  verifyToken,
+  async (
+    req: AuthRequest,
+    res: Response<ProgramListItem[] | RouteApiError>,
+  ) => {
+    try {
+      const credentialLevel = toNum(req.query.credential_level);
+      if (
+        credentialLevel === null ||
+        !Number.isInteger(credentialLevel) ||
+        credentialLevel < 1 ||
+        credentialLevel > 8
+      ) {
+        return res
+          .status(400)
+          .json({ error: "A valid credential_level (1-8) is required" });
+      }
+
+      const q = toStr(req.query.q);
+      const limit = Math.min(200, Math.max(1, toNum(req.query.limit) ?? 50));
+
+      const { rows } = await pool.query<{
+        title: string;
+        cip_code: string | null;
+        credential_level: number | null;
+        credential_title: string | null;
+      }>(
+        `SELECT title, cip_code, credential_level, credential_title
+           FROM (
+             SELECT DISTINCT ON (title, cip_code)
+                    title, cip_code, credential_level, credential_title
+               FROM programs
+              WHERE credential_level = $1
+                AND ($2::text IS NULL OR title ILIKE '%' || $2 || '%')
+              ORDER BY title, cip_code
+           ) sub
+          ORDER BY title
+          LIMIT $3`,
+        [credentialLevel, q, limit],
+      );
+
+      return res.json(
+        rows.map((r) => ({
+          title: r.title,
+          cip_code: r.cip_code,
+          credential_level: toNum(r.credential_level),
+          credential_title: r.credential_title,
+        })),
+      );
+    } catch (error) {
+      console.error("Get programs by credential level error:", error);
+      return res.status(500).json({
+        error: "Failed to fetch programs",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+/**
+ * GET /programs/:cip_code/schools?credential_level=<1-8>&q=<search>&limit=<n>
+ * Schools offering that program at that credential level — reverse of
+ * GET /schools/:id/programs. Powers the compare page's
+ * Credential -> Program -> College search-bar flow.
+ */
+router.get(
+  "/:cip_code/schools",
+  verifyToken,
+  async (
+    req: AuthRequest,
+    res: Response<SchoolListItem[] | RouteApiError>,
+  ) => {
+    try {
+      const cipCode = toStr(req.params.cip_code);
+      if (!cipCode) {
+        return res.status(400).json({ error: "A valid cip_code is required" });
+      }
+
+      const credentialLevel = toNum(req.query.credential_level);
+      if (
+        credentialLevel === null ||
+        !Number.isInteger(credentialLevel) ||
+        credentialLevel < 1 ||
+        credentialLevel > 8
+      ) {
+        return res
+          .status(400)
+          .json({ error: "A valid credential_level (1-8) is required" });
+      }
+
+      const q = toStr(req.query.q);
+      const limit = Math.min(200, Math.max(1, toNum(req.query.limit) ?? 50));
+
+      const { rows } = await pool.query<{
+        unitid: number;
+        school_name: string;
+        city: string | null;
+        state: string | null;
+      }>(
+        `SELECT s.unitid, s.name AS school_name, s.city, s.state
+           FROM (
+             SELECT DISTINCT unitid FROM programs
+              WHERE cip_code = $1 AND credential_level = $2
+           ) p
+           JOIN schools s ON s.unitid = p.unitid
+          WHERE ($3::text IS NULL OR s.name ILIKE '%' || $3 || '%')
+          ORDER BY s.name ASC
+          LIMIT $4`,
+        [cipCode, credentialLevel, q, limit],
+      );
+
+      return res.json(
+        rows.map((r) => ({
+          unitid: toNum(r.unitid) ?? 0,
+          school_name: r.school_name,
+          city: r.city,
+          state: r.state,
+        })),
+      );
+    } catch (error) {
+      console.error("Get schools by program error:", error);
+      return res.status(500).json({
+        error: "Failed to fetch schools",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
 
 /**
  * GET /programs/:unitid
