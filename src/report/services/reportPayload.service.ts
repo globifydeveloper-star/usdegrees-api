@@ -22,7 +22,8 @@ import pool from "../../db/client";
 import type { C1LitePayload } from "./reportPrompt";
 import { calculateAdmissionFit } from "../utils/admissionScore";
 import { analyzeRoi } from "../utils/roi";
-import { normalizeEarningsFillMethod } from "../../types/earnings";
+import { getEarningsForProgram } from "../../services/earnings.service";
+import { getAthleticsProfile } from "../../services/athletics.service";
 
 // ---- vintage constants (no DB columns yet) -----------------------
 const NET_PRICE_VINTAGE = "2023–24 Scorecard";
@@ -30,7 +31,11 @@ const ADMISSIONS_VINTAGE = "IPEDS";
 
 // ---- income bracket -> net-price column --------------------------
 export type IncomeBracket =
-  | "0_30000" | "30001_48000" | "48001_75000" | "75001_110000" | "110001_plus";
+  | "0_30000"
+  | "30001_48000"
+  | "48001_75000"
+  | "75001_110000"
+  | "110001_plus";
 
 const BRACKET_TO_COLUMN: Record<IncomeBracket, string> = {
   "0_30000": "income_0_30000",
@@ -48,7 +53,11 @@ const BRACKET_TO_LABEL: Record<IncomeBracket, string> = {
 };
 
 // Disclosure categories that make an academic fit score meaningless.
-const NO_FIT_CATEGORIES = new Set(["A_OPEN_ADMISSION", "B_NOT_USED", "F_INSTITUTION_CLOSED"]);
+const NO_FIT_CATEGORIES = new Set([
+  "A_OPEN_ADMISSION",
+  "B_NOT_USED",
+  "F_INSTITUTION_CLOSED",
+]);
 
 // ------------------------------------------------------------------
 // Net price + sector (sector derived from which net-price table the
@@ -65,7 +74,10 @@ async function fetchNetPriceAndSector(
     [unitid],
   );
   if (pub.rows.length > 0) {
-    return { sector: "Public, 4-year", value: col ? (pub.rows[0][col] ?? null) : null };
+    return {
+      sector: "Public, 4-year",
+      value: col ? (pub.rows[0][col] ?? null) : null,
+    };
   }
 
   const pri = await pool.query(
@@ -73,7 +85,10 @@ async function fetchNetPriceAndSector(
     [unitid],
   );
   if (pri.rows.length > 0) {
-    return { sector: "Private, 4-year", value: col ? (pri.rows[0][col] ?? null) : null };
+    return {
+      sector: "Private, 4-year",
+      value: col ? (pri.rows[0][col] ?? null) : null,
+    };
   }
   return { sector: "Unknown", value: null };
 }
@@ -106,58 +121,71 @@ async function fetchAdmissions(unitid: number) {
 }
 
 // ------------------------------------------------------------------
-// Program earnings (year_10) — program-level if cip given, else aggregate
+// Resolve a program's programs.credential_level from its CIP code. Shared by
+// fetchProgramEarnings and fetchRoi so a program is only ever resolved once
+// per school per report (previously each fetched it independently).
 // ------------------------------------------------------------------
-async function fetchProgramEarnings(unitid: number, programCip?: string) {
-  if (programCip) {
-    const { rows } = await pool.query(
-      `SELECT year_10, year_10_method, grad_cohort
-         FROM earnings_against_courses_merged
-        WHERE unitid = $1 AND replace(cip_code, '.', '') = replace($2, '.', '') AND year_10 IS NOT NULL
-        ORDER BY grad_cohort DESC LIMIT 1`,
-      [unitid, programCip],
-    );
-    if (!rows.length) return { earnings: null, vintage: null, method_flag: null };
-    const data = rows[0];
+async function resolveCredentialLevel(
+  unitid: number,
+  programCip: string,
+): Promise<number | null> {
+  const { rows } = await pool.query(
+    `SELECT credential_level FROM programs WHERE unitid = $1 AND replace(cip_code, '.', '') = replace($2, '.', '') LIMIT 1`,
+    [unitid, programCip],
+  );
+  return rows[0]?.credential_level ?? null;
+}
+
+// ------------------------------------------------------------------
+// Program earnings (year_10) — program-level if cip+credential_level are
+// both known, else aggregate.
+//
+// Delegates cohort selection to earnings.service.ts's getEarningsForProgram
+// (the same recency-first resolver /compare and /search use) instead of a
+// separate ORDER BY grad_cohort DESC query: that naive string-sort query
+// ignored credential_level entirely and had no special handling for the
+// '0000' sentinel grad_cohort ("unknown/aggregate placeholder", not a real
+// class year — see earnings.service.ts) or for skipped_future/
+// skipped_no_anchor rows, so it could surface either the placeholder cohort
+// or an unrelated credential tier's figure as if it were a real citation.
+// ------------------------------------------------------------------
+async function fetchProgramEarnings(
+  unitid: number,
+  programCip?: string,
+  credentialLevel?: number | null,
+) {
+  if (programCip && credentialLevel != null) {
+    const resolved = await getEarningsForProgram(unitid, programCip, credentialLevel);
+    const year10 = resolved.year_10;
+    if (!year10 || year10.value == null) {
+      return { earnings: null, vintage: null, method_flag: null };
+    }
     return {
-      earnings: data.year_10 != null ? Math.round(Number(data.year_10)) : null,
-      vintage: data.grad_cohort ?? null,
-      method_flag: normalizeEarningsFillMethod(data.year_10_method),
+      earnings: Math.round(year10.value),
+      // '0000' means this figure isn't tied to any real graduating cohort —
+      // citing it as a year would be worse than citing no year at all.
+      vintage: year10.cohort === "0000" ? null : Number(year10.cohort),
+      method_flag: year10.method,
     };
   }
-  // Aggregate across the school's programs.
+  // Aggregate across the school's programs (no specific program resolved).
   const { rows } = await pool.query(
     `SELECT year_10 FROM earnings_against_courses_merged WHERE unitid = $1 AND year_10 IS NOT NULL`,
     [unitid],
   );
-  const vals = rows.map((r: { year_10: number | string }) => Number(r.year_10)).filter((v: number) => !Number.isNaN(v));
+  const vals = rows
+    .map((r: { year_10: number | string }) => Number(r.year_10))
+    .filter((v: number) => !Number.isNaN(v));
   if (!vals.length) return { earnings: null, vintage: null, method_flag: null };
-  const avg = Math.round(vals.reduce((a: number, b: number) => a + b, 0) / vals.length);
+  const avg = Math.round(
+    vals.reduce((a: number, b: number) => a + b, 0) / vals.length,
+  );
   return {
     earnings: avg,
     vintage: "school-level average",
     method_flag: `aggregated year_10 across ${vals.length} programs`,
   };
 }
-
-// ── OLD raw-table query — kept for rollback, not executed ──────────────────
-// async function fetchProgramEarningsLegacy(unitid: number, programCip?: string) {
-//   if (programCip) {
-//     const { rows } = await pool.query(
-//       `SELECT year_10, year_10_method, grad_cohort
-//          FROM earnings_against_courses
-//         WHERE unitid = $1 AND replace(cip_code, '.', '') = replace($2, '.', '') AND year_10 IS NOT NULL
-//         ORDER BY grad_cohort DESC LIMIT 1`,
-//       [unitid, programCip],
-//     );
-//     ...
-//   }
-//   const { rows } = await pool.query(
-//     `SELECT year_10 FROM earnings_against_courses WHERE unitid = $1 AND year_10 IS NOT NULL`,
-//     [unitid],
-//   );
-//   ...
-// }
 
 // Sticker price + ROI supplementary blob.
 async function fetchCosts(unitid: number) {
@@ -167,24 +195,19 @@ async function fetchCosts(unitid: number) {
   );
   const data = rows[0];
   return {
-    sticker: data?.sticker_price_by_api != null ? Math.round(Number(data.sticker_price_by_api)) : null,
+    sticker:
+      data?.sticker_price_by_api != null
+        ? Math.round(Number(data.sticker_price_by_api))
+        : null,
     forRoi: data?.for_roi_data ?? null, // JSON blob, not itself an ROI figure — see fetchRoi()
   };
 }
 
 // Precomputed 20-year ROI, keyed by unitid + credential_level (via `roi`
-// table). credential_level is resolved from `programs` when a programCip is
-// given; otherwise we take the best available row for the school, same
-// fallback used in routes/search.ts.
-async function fetchRoi(unitid: number, programCip?: string) {
-  let credentialLevel: number | null = null;
-  if (programCip) {
-    const prog = await pool.query(
-      `SELECT credential_level FROM programs WHERE unitid = $1 AND replace(cip_code, '.', '') = replace($2, '.', '') LIMIT 1`,
-      [unitid, programCip],
-    );
-    credentialLevel = prog.rows[0]?.credential_level ?? null;
-  }
+// table). credentialLevel is resolved by the caller (resolveCredentialLevel)
+// from the same programCip fetchProgramEarnings uses; null falls back to the
+// best available row for the school, same fallback used in routes/search.ts.
+async function fetchRoi(unitid: number, credentialLevel: number | null) {
   const { rows } = await pool.query(
     `SELECT avg_salary, total_cost, roi_20yr FROM roi
       WHERE unitid = $1
@@ -209,7 +232,8 @@ async function fetchDebt(unitid: number) {
   const data = rows[0];
   return {
     avg_debt: data?.avg_debt != null ? Math.round(Number(data.avg_debt)) : null,
-    ratio: data?.debt_income_ratio != null ? Number(data.debt_income_ratio) : null,
+    ratio:
+      data?.debt_income_ratio != null ? Number(data.debt_income_ratio) : null,
     ratio_text: data?.ratio_text ?? null,
   };
 }
@@ -230,17 +254,73 @@ async function fetchReportMeta(reportReferenceId: string) {
     `SELECT report_reference_id, created_at FROM usdreports WHERE report_reference_id = $1 LIMIT 1`,
     [reportReferenceId],
   );
-  if (!rows.length) throw new Error(`report fetch (${reportReferenceId}): no row`);
+  if (!rows.length)
+    throw new Error(`report fetch (${reportReferenceId}): no row`);
   return rows[0];
 }
 
 async function fetchSchool(unitid: number) {
   const { rows } = await pool.query(
-    `SELECT name, city, state, accreditor, is_active FROM schools WHERE unitid = $1 LIMIT 1`,
+    `SELECT name, city, state, accreditor, address, zip, is_active FROM schools WHERE unitid = $1 LIMIT 1`,
     [unitid],
   );
   if (!rows.length) throw new Error(`school fetch (${unitid}): no row`);
   return rows[0];
+}
+
+// ------------------------------------------------------------------
+// Campus & student body (students table) — school-level, not program-level.
+// ------------------------------------------------------------------
+async function fetchCampus(unitid: number) {
+  const { rows } = await pool.query(
+    `SELECT enrollment_undergrad_12_month, enrollment_grad_12_month, student_faculty_ratio,
+            graduation_rate, retention_rate, demographics_men, demographics_women, size_category
+       FROM students WHERE unitid = $1 LIMIT 1`,
+    [unitid],
+  );
+  const data = rows[0];
+  const num = (v: unknown) => (v != null ? Number(v) : null);
+  return {
+    enrollment_undergrad: data?.enrollment_undergrad_12_month ?? null,
+    enrollment_grad: data?.enrollment_grad_12_month ?? null,
+    student_faculty_ratio: num(data?.student_faculty_ratio),
+    graduation_rate: num(data?.graduation_rate),
+    retention_rate: num(data?.retention_rate),
+    demographics_men_pct: num(data?.demographics_men),
+    demographics_women_pct: num(data?.demographics_women),
+    size_category: data?.size_category ?? null,
+  };
+}
+
+// ------------------------------------------------------------------
+// Full tuition & costs breakdown (costs table) — school-level, not
+// program-level. sticker_price here is the same figure already threaded
+// per-program into schools[].sticker_price; repeated here for the dedicated
+// Tuition & Costs page so it doesn't depend on which program entry rendered.
+// ------------------------------------------------------------------
+async function fetchTuitionDetail(unitid: number) {
+  const { rows } = await pool.query(
+    `SELECT sticker_price_by_api, tuition_in_state, tuition_out_state, roomboard_oncampus,
+            roomboard_offcampus, booksupply, otherexpense_oncampus, otherexpense_offcampus,
+            avg_net_price_public, avg_net_price_private, avg_net_price_overall
+       FROM costs WHERE unitid = $1 LIMIT 1`,
+    [unitid],
+  );
+  const data = rows[0];
+  const num = (v: unknown) => (v != null ? Math.round(Number(v)) : null);
+  return {
+    sticker_price: num(data?.sticker_price_by_api),
+    tuition_in_state: num(data?.tuition_in_state),
+    tuition_out_state: num(data?.tuition_out_state),
+    room_board_on_campus: num(data?.roomboard_oncampus),
+    room_board_off_campus: num(data?.roomboard_offcampus),
+    books_supply: num(data?.booksupply),
+    other_expense_on_campus: num(data?.otherexpense_oncampus),
+    other_expense_off_campus: num(data?.otherexpense_offcampus),
+    avg_net_price_public: num(data?.avg_net_price_public),
+    avg_net_price_private: num(data?.avg_net_price_private),
+    avg_net_price_overall: num(data?.avg_net_price_overall),
+  };
 }
 
 // ------------------------------------------------------------------
@@ -254,22 +334,30 @@ function computeDerivedFlags(
   const merit: string[] = [];
   const reach: string[] = [];
   for (const s of schools) {
-    if (studentSat != null && s.sat_75 != null && studentSat > s.sat_75) merit.push(s.name);
-    if (studentSat != null && s.sat_25 != null && studentSat < s.sat_25) reach.push(s.name);
+    if (studentSat != null && s.sat_75 != null && studentSat > s.sat_75)
+      merit.push(s.display_name);
+    if (studentSat != null && s.sat_25 != null && studentSat < s.sat_25)
+      reach.push(s.display_name);
   }
-  const costs = schools.map((s) => s.net_price_bracket).filter((v): v is number => v != null);
-  const earns = schools.map((s) => s.program_earnings).filter((v): v is number => v != null);
-  const debts = schools.map((s) => s.avg_debt).filter((v): v is number => v != null);
+  const costs = schools
+    .map((s) => s.net_price_bracket)
+    .filter((v): v is number => v != null);
+  const earns = schools
+    .map((s) => s.program_earnings)
+    .filter((v): v is number => v != null);
+  const debts = schools
+    .map((s) => s.avg_debt)
+    .filter((v): v is number => v != null);
 
   // Factual highest-value ROI figure — NOT a recommendation. Ties resolve to
   // payload order (first school with the max value).
   let bestRoiSchool = "";
   let bestRoi = -Infinity;
   for (const s of schools) {
-    const v = roi20YrByName[s.name];
+    const v = roi20YrByName[s.display_name];
     if (v != null && v > bestRoi) {
       bestRoi = v;
-      bestRoiSchool = s.name;
+      bestRoiSchool = s.display_name;
     }
   }
 
@@ -292,7 +380,7 @@ function computeDerivedFlags(
 export async function buildC1LitePayload(args: {
   userId: number;
   reportReferenceId: string;
-  schools: Array<{ unitid: number; programCip?: string }>;
+  schools: Array<{ unitid: number; programCip?: string; programName?: string }>;
   incomeBracket: IncomeBracket | null;
   methodologyVersion?: string;
 }): Promise<C1LitePayload> {
@@ -311,17 +399,27 @@ export async function buildC1LitePayload(args: {
 
   const out: C1LitePayload["schools"] = [];
   const roi20YrByName: Record<string, number> = {};
+  // Cache each unitid's core school row so the college_details pass below
+  // (deduped one-per-college) doesn't re-query schools for unitids already
+  // fetched here — the same college can appear multiple times in
+  // args.schools, once per compared program.
+  const schoolCache = new Map<number, Awaited<ReturnType<typeof fetchSchool>>>();
 
-  for (const { unitid, programCip } of args.schools) {
+  for (const { unitid, programCip, programName } of args.schools) {
     const core = await fetchSchool(unitid);
+    schoolCache.set(unitid, core);
+    const displayName = programName ? `${core.name} — ${programName}` : core.name;
+    const credentialLevel = programCip
+      ? await resolveCredentialLevel(unitid, programCip)
+      : null;
 
     const [np, adm, earn, costs, debt, roi] = await Promise.all([
       fetchNetPriceAndSector(unitid, incomeBracket),
       fetchAdmissions(unitid),
-      fetchProgramEarnings(unitid, programCip),
+      fetchProgramEarnings(unitid, programCip, credentialLevel),
       fetchCosts(unitid),
       fetchDebt(unitid),
-      fetchRoi(unitid, programCip),
+      fetchRoi(unitid, credentialLevel),
     ]);
 
     const category = adm?.sat_disclosure_category ?? "E_TEST_REQUIRED_NO_RANGE";
@@ -331,16 +429,21 @@ export async function buildC1LitePayload(args: {
     const sat25 =
       adm?.school_min_range ??
       (adm?.sat_p25_math != null && adm?.sat_p25_reading != null
-        ? Number(adm.sat_p25_math) + Number(adm.sat_p25_reading) : null);
+        ? Number(adm.sat_p25_math) + Number(adm.sat_p25_reading)
+        : null);
     const sat75 =
       adm?.school_max_range ??
       (adm?.sat_p75_math != null && adm?.sat_p75_reading != null
-        ? Number(adm.sat_p75_math) + Number(adm.sat_p75_reading) : null);
+        ? Number(adm.sat_p75_math) + Number(adm.sat_p75_reading)
+        : null);
 
     // admission_rate may be fraction (0.65) or percent (65). Normalize.
-    const rawRate = adm?.admission_rate != null ? Number(adm.admission_rate) : null;
-    const rateFraction = rawRate == null ? null : rawRate > 1 ? rawRate / 100 : rawRate;
-    const showRate = disc.show_admission_rate_required && adm?.publish_publicly !== false;
+    const rawRate =
+      adm?.admission_rate != null ? Number(adm.admission_rate) : null;
+    const rateFraction =
+      rawRate == null ? null : rawRate > 1 ? rawRate / 100 : rawRate;
+    const showRate =
+      disc.show_admission_rate_required && adm?.publish_publicly !== false;
     const admitRatePct =
       showRate && rateFraction != null ? Math.round(rateFraction * 100) : null;
 
@@ -357,11 +460,16 @@ export async function buildC1LitePayload(args: {
         },
         {
           admissionRate: rateFraction,
-          satAvg: adm?.sat_avg_overall != null ? Number(adm.sat_avg_overall) : null,
-          sat25Math: adm?.sat_p25_math != null ? Number(adm.sat_p25_math) : null,
-          sat75Math: adm?.sat_p75_math != null ? Number(adm.sat_p75_math) : null,
-          sat25Reading: adm?.sat_p25_reading != null ? Number(adm.sat_p25_reading) : null,
-          sat75Reading: adm?.sat_p75_reading != null ? Number(adm.sat_p75_reading) : null,
+          satAvg:
+            adm?.sat_avg_overall != null ? Number(adm.sat_avg_overall) : null,
+          sat25Math:
+            adm?.sat_p25_math != null ? Number(adm.sat_p25_math) : null,
+          sat75Math:
+            adm?.sat_p75_math != null ? Number(adm.sat_p75_math) : null,
+          sat25Reading:
+            adm?.sat_p25_reading != null ? Number(adm.sat_p25_reading) : null,
+          sat75Reading:
+            adm?.sat_p75_reading != null ? Number(adm.sat_p75_reading) : null,
         },
       );
       fitScore = fit.category === "Unavailable" ? null : fit.score;
@@ -379,10 +487,12 @@ export async function buildC1LitePayload(args: {
       roi20Yr: roi.roi20Yr,
     });
 
-    if (roi.roi20Yr != null) roi20YrByName[core.name] = roi.roi20Yr;
+    if (roi.roi20Yr != null) roi20YrByName[displayName] = roi.roi20Yr;
 
     out.push({
       name: core.name,
+      program_name: programName ?? null,
+      display_name: displayName,
       unitid: String(unitid),
       sector: np.sector,
       city: core.city,
@@ -395,7 +505,10 @@ export async function buildC1LitePayload(args: {
       sat_25: sat25,
       sat_75: sat75,
       sat_vintage: sat25 != null || sat75 != null ? ADMISSIONS_VINTAGE : null,
-      fit_score: studentTotalSat == null && fitLabel !== "Not applicable" ? null : fitScore,
+      fit_score:
+        studentTotalSat == null && fitLabel !== "Not applicable"
+          ? null
+          : fitScore,
       fit_label: fitLabel,
       sat_data_category: category,
       disclosure: disc,
@@ -412,12 +525,41 @@ export async function buildC1LitePayload(args: {
     });
   }
 
+  // College-level detail (campus/students, tuition & costs, athletics) is
+  // NOT program-specific, so it's built once per unique unitid — a college
+  // compared under three programs still gets exactly one entry here, never
+  // three — instead of alongside each per-program row in `schools`.
+  const uniqueUnitids = [...new Set(args.schools.map((s) => s.unitid))];
+  const college_details: C1LitePayload["college_details"] = await Promise.all(
+    uniqueUnitids.map(async (unitid) => {
+      const core = schoolCache.get(unitid) ?? (await fetchSchool(unitid));
+      const [campus, tuition, athletics] = await Promise.all([
+        fetchCampus(unitid),
+        fetchTuitionDetail(unitid),
+        getAthleticsProfile(unitid),
+      ]);
+      return {
+        unitid: String(unitid),
+        name: core.name,
+        city: core.city,
+        state: core.state,
+        address: core.address ?? null,
+        zip: core.zip ?? null,
+        campus,
+        tuition,
+        athletics,
+      };
+    }),
+  );
+
   return {
     report_meta: {
       report_reference_id: meta.report_reference_id,
       created_at: meta.created_at,
       generated_date: new Date().toLocaleDateString("en-US", {
-        year: "numeric", month: "long", day: "numeric",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
       }),
       methodology_version: args.methodologyVersion ?? "lite-v1",
     },
@@ -432,10 +574,15 @@ export async function buildC1LitePayload(args: {
       high_school_name: student.high_school_name,
       preferred_degree_level: student.preferred_degree_level,
       preferred_college_type: student.preferred_college_type,
-      income_bracket_field: incomeBracket ? BRACKET_TO_COLUMN[incomeBracket] : null,
-      income_bracket_label: incomeBracket ? BRACKET_TO_LABEL[incomeBracket] : null,
+      income_bracket_field: incomeBracket
+        ? BRACKET_TO_COLUMN[incomeBracket]
+        : null,
+      income_bracket_label: incomeBracket
+        ? BRACKET_TO_LABEL[incomeBracket]
+        : null,
     },
     schools: out,
     derived_flags: computeDerivedFlags(studentTotalSat, out, roi20YrByName),
+    college_details,
   };
 }

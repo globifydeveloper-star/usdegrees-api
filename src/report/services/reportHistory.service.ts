@@ -5,6 +5,8 @@ import pool from "../../db/client";
 export interface ReportCollege {
   unitid: number;
   name: string;
+  cipCode: string | null;
+  programName: string | null;
 }
 
 export interface ReportHistoryEntry {
@@ -83,7 +85,7 @@ export async function createPendingReport(userId: number): Promise<PendingReport
 export async function attachReportPdfAndColleges(params: {
   reportReferenceId: string;
   pdfData: Buffer;
-  colleges: Array<{ unitid: number }>;
+  colleges: Array<{ unitid: number; cipCode?: string | null; programName?: string | null }>;
 }): Promise<void> {
   const { reportReferenceId, pdfData, colleges } = params;
   if (colleges.length === 0) {
@@ -108,17 +110,17 @@ export async function attachReportPdfAndColleges(params: {
     }
     const reportId = updateResult.rows[0].id;
 
-    const values: number[] = [];
+    const values: Array<number | string | null> = [];
     const placeholders = colleges
       .map((college, index) => {
-        const base = index * 3;
-        values.push(reportId, college.unitid, index);
-        return `($${base + 1}, $${base + 2}, $${base + 3})`;
+        const base = index * 5;
+        values.push(reportId, college.unitid, index, college.cipCode ?? null, college.programName ?? null);
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
       })
       .join(", ");
 
     await client.query(
-      `INSERT INTO usdreport_colleges (report_id, unitid, display_order) VALUES ${placeholders}`,
+      `INSERT INTO usdreport_colleges (report_id, unitid, display_order, cip_code, program_name) VALUES ${placeholders}`,
       values,
     );
 
@@ -154,7 +156,7 @@ export async function listReportsForUser(
        r.created_at,
        COALESCE(
          (
-           SELECT json_agg(json_build_object('unitid', rc.unitid, 'name', s.name) ORDER BY rc.display_order)
+           SELECT json_agg(json_build_object('unitid', rc.unitid, 'name', s.name, 'cipCode', rc.cip_code, 'programName', rc.program_name) ORDER BY rc.display_order)
            FROM usdreport_colleges rc
            JOIN schools s ON s.unitid = rc.unitid
            WHERE rc.report_id = r.id
@@ -195,7 +197,7 @@ export async function getReportForUser(userId: number, reportReferenceId: string
        r.pdf_storage_path,
        COALESCE(
          (
-           SELECT json_agg(json_build_object('unitid', rc.unitid, 'name', s.name) ORDER BY rc.display_order)
+           SELECT json_agg(json_build_object('unitid', rc.unitid, 'name', s.name, 'cipCode', rc.cip_code, 'programName', rc.program_name) ORDER BY rc.display_order)
            FROM usdreport_colleges rc
            JOIN schools s ON s.unitid = rc.unitid
            WHERE rc.report_id = r.id

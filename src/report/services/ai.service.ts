@@ -23,7 +23,7 @@ import {
 export interface GenerateReportArgs {
   userId: number;
   reportReferenceId: string;
-  schools: Array<{ unitid: number; programCip?: string }>;
+  schools: Array<{ unitid: number; programCip?: string; programName?: string }>;
   incomeBracket: IncomeBracket | null;
   methodologyVersion?: string;
 }

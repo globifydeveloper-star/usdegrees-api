@@ -3,8 +3,25 @@ import ReactDOMServer from "react-dom/server";
 import chromium from "@sparticuz/chromium";
 import puppeteerCore, { Browser } from "puppeteer-core";
 import * as path from "path";
+import * as fs from "fs";
 import ReportDocument from "../components/ReportDocument";
 import type { C1LitePayload, C1LiteNarrative } from "./reportPrompt";
+
+/**
+ * The cover logo is embedded as a base64 data URI rather than referenced by
+ * path/URL: Puppeteer's page.setContent() has no base URL to resolve a
+ * relative <img src> against, and there's no guarantee a web server is
+ * running to serve it from over HTTP in every environment this renders in.
+ * Read once and cached — the file never changes at runtime.
+ */
+let cachedLogoDataUri: string | null = null;
+function getLogoDataUri(): string {
+  if (cachedLogoDataUri) return cachedLogoDataUri;
+  const logoPath = path.join(__dirname, "..", "..", "..", "public", "images", "usd_logo.png");
+  const base64 = fs.readFileSync(logoPath).toString("base64");
+  cachedLogoDataUri = `data:image/png;base64,${base64}`;
+  return cachedLogoDataUri;
+}
 
 /**
  * Render environments (Render, most PaaS/serverless platforms) have no
@@ -68,6 +85,7 @@ export async function generateReportPdf(options: GeneratePdfOptions): Promise<Bu
     narrative,
     reportId,
     generatedDate,
+    logoDataUri: getLogoDataUri(),
   });
   const bodyHtml = ReactDOMServer.renderToStaticMarkup(element);
 

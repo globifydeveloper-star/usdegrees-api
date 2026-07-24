@@ -110,6 +110,20 @@ export function PageFooter({
     <div>
       <div
         style={{
+          textAlign: "center",
+          fontSize: "11.5px",
+          fontWeight: 700,
+          letterSpacing: "0.28em",
+          color: theme.color.inkFaint,
+          opacity: 0.55,
+          marginBottom: "8px",
+          textTransform: "uppercase",
+        }}
+      >
+        USDEGREES.COM
+      </div>
+      <div
+        style={{
           width: "100%",
           height: "1px",
           backgroundColor: theme.color.hairline,

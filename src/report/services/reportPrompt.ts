@@ -12,6 +12,8 @@
  * (R1). It never computes, subtracts, estimates, or rounds.
  */
 
+import type { AthleticsProfile } from "../../types/athletics";
+
 // ---------------- PAYLOAD (built by reportPayload.service) ----------------
 export interface C1LitePayload {
   report_meta: {
@@ -36,6 +38,13 @@ export interface C1LitePayload {
   };
   schools: Array<{
     name: string; unitid: string; sector: string;
+    program_name: string | null;
+    // School name plus, when a specific program was compared, that program —
+    // e.g. "Ivy Tech — Computer Science". This is the identity used for
+    // per-school narrative labels (two_minute_lines, fit_sentences) and
+    // derived_flags, so the same college compared under two programs gets
+    // two distinguishable entries instead of colliding on a shared name.
+    display_name: string;
     city: string; state: string; accreditor: string | null;
     net_price_bracket: number | null; net_price_vintage: string | null;
     admit_rate: number | null; admit_rate_vintage: string | null;
@@ -47,7 +56,12 @@ export interface C1LitePayload {
       disclaimer_tier: number; disclaimer_text: string | null;
       show_admission_rate_required: boolean;
     };
-    program_earnings: number | null; earnings_vintage: string | null;
+    program_earnings: number | null;
+    // A real number (the grad_cohort year) when resolved from a specific
+    // program's earnings; the literal string "school-level average" when
+    // aggregated across the school's programs (see reportPayload.service.ts
+    // fetchProgramEarnings); null when nothing is publishable.
+    earnings_vintage: number | string | null;
     earnings_method_flag: string | null; roi_ratio: string | null;
     sticker_price: number | null; sticker_vintage: string | null;
     avg_debt: number | null; debt_income_ratio: number | null;
@@ -60,6 +74,42 @@ export interface C1LitePayload {
     earnings_range_low: string; earnings_range_high: string;
     debt_range_low: string; debt_range_high: string;
   };
+  // College-level detail (NOT program-specific) — exactly one entry per
+  // unique unitid, even when that college appears multiple times in
+  // `schools` under different compared programs. Powers the Campus &
+  // Students, Tuition & Costs, and Athletics pages.
+  college_details: Array<{
+    unitid: string;
+    name: string;
+    city: string;
+    state: string;
+    address: string | null;
+    zip: string | null;
+    campus: {
+      enrollment_undergrad: number | null;
+      enrollment_grad: number | null;
+      student_faculty_ratio: number | null;
+      graduation_rate: number | null;
+      retention_rate: number | null;
+      demographics_men_pct: number | null;
+      demographics_women_pct: number | null;
+      size_category: string | null;
+    };
+    tuition: {
+      sticker_price: number | null;
+      tuition_in_state: number | null;
+      tuition_out_state: number | null;
+      room_board_on_campus: number | null;
+      room_board_off_campus: number | null;
+      books_supply: number | null;
+      other_expense_on_campus: number | null;
+      other_expense_off_campus: number | null;
+      avg_net_price_public: number | null;
+      avg_net_price_private: number | null;
+      avg_net_price_overall: number | null;
+    };
+    athletics: AthleticsProfile | null;
+  }>;
 }
 
 // ---------------- NARRATIVE (what Gemini returns) ----------------
@@ -114,6 +164,13 @@ BRANCHES:
   first year may be more demanding, early support helps. Never discourage.
 - If student.sat_score is null, omit fit scores and say once that no SAT was provided.
 - income_bracket_label null → describe net price as the posted figure, not personalized.
+- net_price_bracket null but sticker_price present → cite sticker_price instead, labeled as the
+  sticker price (never call it "net price"). Only say cost is "not published" when BOTH are null.
+
+IDENTITY: the same college may appear more than once in "schools" when the family compared
+it under different programs. Always use each school entry's exact "display_name" string
+(not "name") as the "school" value in two_minute_lines and fit_sentences — display_name is
+what disambiguates two entries for the same college.
 
 WRITE ONLY THESE (lengths are ceilings):
 - two_minute_lines: exactly one per school, in payload order. Strongest cost-or-outcomes
@@ -186,12 +243,28 @@ function money(v: number | null): string {
   return v != null ? `$${v}` : "not published";
 }
 
+// The two-minute read's cost clause: personalized net price when an income
+// bracket was posted, else the sticker price actually on file (costs.
+// sticker_price_by_api) — "not published" only when BOTH are null. Net price
+// requires an income bracket (routes/report.ts doesn't collect one yet — see
+// reportPayload.service.ts), so without this fallback every report cited
+// "Net price not published" even when a real sticker price existed.
+function costClause(s: C1LitePayload["schools"][number]): string {
+  if (s.net_price_bracket != null) {
+    return `Net price ${money(s.net_price_bracket)}${s.net_price_vintage ? ` (${s.net_price_vintage})` : ""}`;
+  }
+  if (s.sticker_price != null) {
+    return `Sticker price ${money(s.sticker_price)}${s.sticker_vintage ? ` (${s.sticker_vintage})` : ""}`;
+  }
+  return "Net price not published";
+}
+
 export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative {
   const { schools, derived_flags, student } = payload;
 
   const two_minute_lines = schools.map((s) => ({
-    school: s.name,
-    line: `Net price ${money(s.net_price_bracket)}${s.net_price_vintage ? ` (${s.net_price_vintage})` : ""}; program earnings ${money(s.program_earnings)}${s.earnings_vintage ? ` (${s.earnings_vintage})` : ""}.`,
+    school: s.display_name,
+    line: `${costClause(s)}; program earnings ${money(s.program_earnings)}${s.earnings_vintage ? ` (${s.earnings_vintage})` : ""}.`,
   }));
 
   const findingParts: string[] = [];
@@ -201,7 +274,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
   if (derived_flags.reach_flag_schools.length) {
     findingParts.push(`Student's SAT is below the 25th percentile at ${derived_flags.reach_flag_schools.join(", ")}.`);
   }
-  const notApplicable = schools.filter((s) => s.fit_label === "Not applicable").map((s) => s.name);
+  const notApplicable = schools.filter((s) => s.fit_label === "Not applicable").map((s) => s.display_name);
   if (notApplicable.length) {
     findingParts.push(`Fit is not applicable at ${notApplicable.join(", ")}.`);
   }
@@ -226,26 +299,26 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
     : `No income bracket was provided, so net price below is the posted figure, not personalized. ${derived_flags.cost_range_low && derived_flags.cost_range_high ? `Across the selected schools it ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.` : ""}`;
 
   const fit_sentences = schools.map((s) => ({
-    school: s.name,
+    school: s.display_name,
     sentence:
       s.fit_label === "Not applicable"
-        ? `Fit is not applicable at ${s.name}. ${s.disclosure.supporting_copy}`
-        : `${s.name}: SAT band ${s.sat_25 != null && s.sat_75 != null ? `${s.sat_25}–${s.sat_75}` : "not published"}. ${s.disclosure.supporting_copy}`,
+        ? `Fit is not applicable at ${s.display_name}. ${s.disclosure.supporting_copy}`
+        : `${s.display_name}: SAT band ${s.sat_25 != null && s.sat_75 != null ? `${s.sat_25}–${s.sat_75}` : "not published"}. ${s.disclosure.supporting_copy}`,
   }));
 
   const earnings_paragraph = schools
-    .map((s) => `${s.name}: ${money(s.program_earnings)}${s.earnings_vintage ? ` (${s.earnings_vintage}${s.earnings_method_flag ? `, ${s.earnings_method_flag}` : ""})` : ""}.`)
+    .map((s) => `${s.display_name}: ${money(s.program_earnings)}${s.earnings_vintage ? ` (${s.earnings_vintage}${s.earnings_method_flag ? `, ${s.earnings_method_flag}` : ""})` : ""}.`)
     .join(" ") + (derived_flags.earnings_range_low && derived_flags.earnings_range_high
       ? ` Range across selected schools: ${money(Number(derived_flags.earnings_range_low))} to ${money(Number(derived_flags.earnings_range_high))}.`
       : "");
 
   const debt_burden_paragraph = schools
-    .map((s) => `${s.name}: typical debt ${money(s.avg_debt)}, debt-to-income reported as "${s.debt_ratio_text ?? "not published"}".`)
+    .map((s) => `${s.display_name}: typical debt ${money(s.avg_debt)}, debt-to-income reported as "${s.debt_ratio_text ?? "not published"}".`)
     .join(" ") + (derived_flags.debt_range_low && derived_flags.debt_range_high
       ? ` Range across selected schools: ${money(Number(derived_flags.debt_range_low))} to ${money(Number(derived_flags.debt_range_high))}.`
       : "");
 
-  const plain_english_question = `With net price, admissions fit, program earnings, and typical debt on the table for ${schools.map((s) => s.name).join(", ")}, the question for your family is which cost-and-value structure you can carry — not which school ranks highest.`;
+  const plain_english_question = `With net price, admissions fit, program earnings, and typical debt on the table for ${schools.map((s) => s.display_name).join(", ")}, the question for your family is which cost-and-value structure you can carry — not which school ranks highest.`;
 
   return {
     two_minute_lines,
