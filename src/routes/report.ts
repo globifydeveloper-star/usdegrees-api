@@ -1,7 +1,10 @@
 import { Router, Response } from "express";
 import * as fs from "fs";
 import { generateC1LiteReport } from "../report/services/ai.service";
-import { generateReportPdf, getReportPdfPath } from "../report/services/pdf.service";
+import {
+  generateReportPdf,
+  getReportPdfPath,
+} from "../report/services/pdf.service";
 import {
   createPendingReport,
   attachReportPdfAndColleges,
@@ -9,15 +12,25 @@ import {
   getReportForUser,
   getReportPdfSourceByReferenceId,
 } from "../report/services/reportHistory.service";
-import { signReportDownloadToken, verifyReportDownloadToken } from "../utils/reportDownloadToken";
+import {
+  signReportDownloadToken,
+  verifyReportDownloadToken,
+} from "../utils/reportDownloadToken";
 import { verifyToken } from "../middleware/auth";
 import { AuthRequest } from "../types/user";
 import pool from "../db/client";
 
 const router = Router();
 
+interface SelectedCollegeEntry {
+  unitid: number;
+  cipCode?: string | null;
+  programName?: string | null;
+  credentialTitle?: string | null;
+}
+
 interface GenerateReportRequest {
-  selectedColleges: number[];
+  selectedColleges: SelectedCollegeEntry[];
   programId: number;
 }
 
@@ -54,16 +67,17 @@ async function resolveUserId(firebaseUid: string): Promise<number | null> {
 router.post(
   "/generate",
   verifyToken,
-  async (
-    req: AuthRequest,
-    res: Response<{ reportId: string } | ApiError>
-  ) => {
+  async (req: AuthRequest, res: Response<{ reportId: string } | ApiError>) => {
     try {
       const { selectedColleges, programId } = req.body as GenerateReportRequest;
       const firebaseUid = req.userId;
 
       if (!firebaseUid) {
-        return res.status(401).json({ error: "Unauthorized: Missing user authentication context." });
+        return res
+          .status(401)
+          .json({
+            error: "Unauthorized: Missing user authentication context.",
+          });
       }
 
       // Resolve the authenticated user's real id. Never fall back to another
@@ -73,13 +87,54 @@ router.post(
         return res.status(404).json({ error: "User not found." });
       }
 
-      if (!selectedColleges || !Array.isArray(selectedColleges) || selectedColleges.length === 0) {
-        return res.status(400).json({ error: "A non-empty selectedColleges array of integers is required." });
+      if (
+        !selectedColleges ||
+        !Array.isArray(selectedColleges) ||
+        selectedColleges.length === 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "A non-empty selectedColleges array of school entries is required.",
+          });
       }
+
+      console.log(
+        "[report/generate] incoming selectedColleges:",
+        JSON.stringify(selectedColleges),
+      );
+
+      // Accept either a bare unitid (legacy) or a { unitid, cipCode,
+      // programName, credentialTitle } object — same college can now appear
+      // more than once under different programs.
+      const invalidIndex = selectedColleges.findIndex((entry) => {
+        const unitid = typeof entry === "object" && entry !== null ? (entry as SelectedCollegeEntry).unitid : entry;
+        return unitid == null || !Number.isInteger(Number(unitid)) || Number(unitid) <= 0;
+      });
+      if (invalidIndex !== -1) {
+        return res.status(400).json({
+          error: `Invalid school entry at index ${invalidIndex}: missing unitid`,
+        });
+      }
+
+      const normalizedColleges = selectedColleges.map((entry) => {
+        if (typeof entry === "object" && entry !== null) {
+          return {
+            unitid: Number(entry.unitid),
+            cipCode: entry.cipCode ?? null,
+            programName: entry.programName ?? null,
+            credentialTitle: entry.credentialTitle ?? null,
+          };
+        }
+        return { unitid: Number(entry), cipCode: null, programName: null, credentialTitle: null };
+      });
 
       // Resolve the reference program's CIP code (if given) so every
       // selected school's earnings/ROI are pulled at the program level
-      // rather than school-aggregated.
+      // rather than school-aggregated. Per-entry cipCode (from the compare
+      // list) always takes precedence; this is only the fallback for
+      // entries that didn't specify their own program.
       let programCip: string | undefined;
       if (programId) {
         const progRes = await pool.query<{ cip_code: string }>(
@@ -91,7 +146,8 @@ router.post(
 
       // Reserve the durable report_reference_id before generation so the
       // content itself cites the same id that ends up persisted.
-      const { reportReferenceId, createdAt } = await createPendingReport(userId);
+      const { reportReferenceId, createdAt } =
+        await createPendingReport(userId);
 
       // NOTE: no income bracket is captured anywhere in intake yet (no
       // column on usdusers, no field on this request). Net price renders as
@@ -99,7 +155,11 @@ router.post(
       const result = await generateC1LiteReport({
         userId,
         reportReferenceId,
-        schools: selectedColleges.map((unitid) => ({ unitid, programCip })),
+        schools: normalizedColleges.map((c) => ({
+          unitid: c.unitid,
+          programCip: c.cipCode ?? programCip,
+          programName: c.programName ?? undefined,
+        })),
         incomeBracket: null,
       });
 
@@ -111,7 +171,8 @@ router.post(
           result.gateErrors,
         );
         return res.status(422).json({
-          error: "Report generation did not pass acceptance checks and was withheld.",
+          error:
+            "Report generation did not pass acceptance checks and was withheld.",
           details: result.gateErrors.join("; "),
         });
       }
@@ -129,10 +190,16 @@ router.post(
       await attachReportPdfAndColleges({
         reportReferenceId,
         pdfData: pdfBuffer,
-        colleges: selectedColleges.map((unitid) => ({ unitid })),
+        colleges: normalizedColleges.map((c) => ({
+          unitid: c.unitid,
+          cipCode: c.cipCode ?? programCip ?? null,
+          programName: c.programName,
+        })),
       });
 
-      console.log(`[report/generate] Report persisted: ${reportReferenceId} (created ${createdAt})`);
+      console.log(
+        `[report/generate] Report persisted: ${reportReferenceId} (created ${createdAt})`,
+      );
 
       // The report_reference_id is the only identifier the frontend should
       // ever see or use — fetch the PDF via GET /report/:reportId, which
@@ -145,11 +212,15 @@ router.post(
         details: error instanceof Error ? error.message : "Unknown error",
       });
     }
-  }
+  },
 );
 
 interface ReportListResponse {
-  reports: { reportId: string; createdAt: string; colleges: { unitid: number; name: string }[] }[];
+  reports: {
+    reportId: string;
+    createdAt: string;
+    colleges: { unitid: number; name: string }[];
+  }[];
   total: number;
   page: number;
   limit: number;
@@ -167,7 +238,11 @@ router.get(
     try {
       const firebaseUid = req.userId;
       if (!firebaseUid) {
-        return res.status(401).json({ error: "Unauthorized: Missing user authentication context." });
+        return res
+          .status(401)
+          .json({
+            error: "Unauthorized: Missing user authentication context.",
+          });
       }
       const userId = await resolveUserId(firebaseUid);
       if (!userId) {
@@ -175,7 +250,10 @@ router.get(
       }
 
       const page = Math.max(1, toPositiveInt(req.query.page, 1));
-      const limit = Math.min(50, Math.max(1, toPositiveInt(req.query.limit, 10)));
+      const limit = Math.min(
+        50,
+        Math.max(1, toPositiveInt(req.query.limit, 10)),
+      );
 
       const { reports, total } = await listReportsForUser(userId, page, limit);
       const hasMore = (page - 1) * limit + reports.length < total;
@@ -188,7 +266,7 @@ router.get(
         details: error instanceof Error ? error.message : "Unknown error",
       });
     }
-  }
+  },
 );
 
 interface ReportDetailResponse {
@@ -211,7 +289,11 @@ router.get(
     try {
       const firebaseUid = req.userId;
       if (!firebaseUid) {
-        return res.status(401).json({ error: "Unauthorized: Missing user authentication context." });
+        return res
+          .status(401)
+          .json({
+            error: "Unauthorized: Missing user authentication context.",
+          });
       }
       const userId = await resolveUserId(firebaseUid);
       if (!userId) {
@@ -243,7 +325,7 @@ router.get(
         details: error instanceof Error ? error.message : "Unknown error",
       });
     }
-  }
+  },
 );
 
 /**
@@ -252,51 +334,59 @@ router.get(
  * authorization (same semantics as a cloud signed URL), so this route is
  * intentionally not behind verifyToken.
  */
-router.get("/:reportId/download", async (req, res: Response<Buffer | ApiError | void>) => {
-  try {
-    const reportId = toParamString(req.params.reportId);
-    const token = req.query.token;
+router.get(
+  "/:reportId/download",
+  async (req, res: Response<Buffer | ApiError | void>) => {
+    try {
+      const reportId = toParamString(req.params.reportId);
+      const token = req.query.token;
 
-    if (typeof token !== "string" || !token) {
-      return res.status(401).json({ error: "Missing download token." });
-    }
-
-    const tokenReportRef = verifyReportDownloadToken(token);
-    if (!tokenReportRef || tokenReportRef !== reportId) {
-      return res.status(401).json({ error: "Invalid or expired download link." });
-    }
-
-    const source = await getReportPdfSourceByReferenceId(reportId);
-    if (!source) {
-      return res.status(404).json({ error: "Report not found." });
-    }
-
-    // DB-stored PDF (pdf_data) is the source of truth for every row created
-    // after the storage migration.
-    if (source.pdfData && source.pdfData.length > 0) {
-      res.setHeader("Content-Type", source.mimeType || "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="report-${reportId}.pdf"`);
-      return res.send(source.pdfData);
-    }
-
-    // Legacy fallback: rows created before the migration only ever had
-    // pdf_storage_path populated. Serve those from disk rather than 404ing
-    // on every report generated before this fix shipped.
-    if (source.pdfStoragePath) {
-      const absolutePath = getReportPdfPath(source.pdfStoragePath);
-      if (fs.existsSync(absolutePath)) {
-        return res.download(absolutePath, `report-${reportId}.pdf`);
+      if (typeof token !== "string" || !token) {
+        return res.status(401).json({ error: "Missing download token." });
       }
-    }
 
-    return res.status(404).json({ error: "Report file not found." });
-  } catch (error) {
-    console.error("Error downloading report:", error);
-    return res.status(500).json({
-      error: "Failed to download report",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-});
+      const tokenReportRef = verifyReportDownloadToken(token);
+      if (!tokenReportRef || tokenReportRef !== reportId) {
+        return res
+          .status(401)
+          .json({ error: "Invalid or expired download link." });
+      }
+
+      const source = await getReportPdfSourceByReferenceId(reportId);
+      if (!source) {
+        return res.status(404).json({ error: "Report not found." });
+      }
+
+      // DB-stored PDF (pdf_data) is the source of truth for every row created
+      // after the storage migration.
+      if (source.pdfData && source.pdfData.length > 0) {
+        res.setHeader("Content-Type", source.mimeType || "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="report-${reportId}.pdf"`,
+        );
+        return res.send(source.pdfData);
+      }
+
+      // Legacy fallback: rows created before the migration only ever had
+      // pdf_storage_path populated. Serve those from disk rather than 404ing
+      // on every report generated before this fix shipped.
+      if (source.pdfStoragePath) {
+        const absolutePath = getReportPdfPath(source.pdfStoragePath);
+        if (fs.existsSync(absolutePath)) {
+          return res.download(absolutePath, `report-${reportId}.pdf`);
+        }
+      }
+
+      return res.status(404).json({ error: "Report file not found." });
+    } catch (error) {
+      console.error("Error downloading report:", error);
+      return res.status(500).json({
+        error: "Failed to download report",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
 
 export default router;

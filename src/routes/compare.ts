@@ -673,6 +673,161 @@ router.delete(
   },
 );
 
+// ===========================================================================
+// /compare/matrix — the caller's per-program compare-matrix selections,
+// backed by the NEW compare_matrix_entries table. Distinct from
+// /compare/selected (bare-unitid, user_compare_history-backed): the matrix
+// tracks unitid + specific program (cip_code/credential_level), so the same
+// college can appear more than once under different programs.
+//
+// PUT is a full-list replace (delete-then-insert in one transaction) to
+// match how the frontend already maintains this list client-side — not an
+// incremental add/remove like /compare/selected.
+// ===========================================================================
+
+interface MatrixEntry {
+  unitid: number;
+  cipCode: string | null;
+  credentialLevel: string | null;
+  programName: string | null;
+  credentialTitle: string | null;
+}
+
+/**
+ * GET /compare/matrix
+ * Returns the caller's current compare-matrix rows. Empty -> [].
+ */
+router.get(
+  "/matrix",
+  verifyToken,
+  async (req: AuthRequest, res: Response<MatrixEntry[] | ApiErrorBody>) => {
+    try {
+      const userId = await resolveUserId(req.userId as string);
+      if (!userId) return res.status(404).json({ error: "User not found" });
+
+      const { rows } = await pool.query<{
+        unitid: string;
+        cip_code: string | null;
+        credential_level: string | null;
+        program_name: string | null;
+        credential_title: string | null;
+      }>(
+        `SELECT unitid, cip_code, credential_level, program_name, credential_title
+           FROM compare_matrix_entries
+          WHERE user_id = $1
+          ORDER BY id ASC`,
+        [userId],
+      );
+
+      return res.json(
+        rows.map((r) => ({
+          unitid: toNum(r.unitid) ?? 0,
+          cipCode: r.cip_code,
+          credentialLevel: r.credential_level,
+          programName: r.program_name,
+          credentialTitle: r.credential_title,
+        })),
+      );
+    } catch (error) {
+      console.error("Get compare matrix error:", error);
+      return res.status(500).json({
+        error: "Failed to fetch compare matrix",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+/**
+ * PUT /compare/matrix   body { entries: [{ unitid, cipCode?, credentialLevel?,
+ *                                           programName?, credentialTitle? }] }
+ * Replaces ALL of the caller's compare-matrix rows with the given list
+ * (delete-then-insert in one transaction). An empty entries[] clears the
+ * matrix. Every entry must have a valid positive-integer unitid.
+ */
+router.put(
+  "/matrix",
+  verifyToken,
+  async (req: AuthRequest, res: Response<MatrixEntry[] | ApiErrorBody>) => {
+    try {
+      const userId = await resolveUserId(req.userId as string);
+      if (!userId) return res.status(404).json({ error: "User not found" });
+
+      const entries = (req.body as { entries?: unknown[] } | undefined)
+        ?.entries;
+      if (!Array.isArray(entries)) {
+        return res.status(400).json({ error: "entries[] is required" });
+      }
+
+      const normalized: MatrixEntry[] = [];
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i] as Record<string, unknown> | null;
+        const unitid = toNum(entry?.unitid);
+        if (unitid === null || !Number.isInteger(unitid) || unitid <= 0) {
+          return res.status(400).json({
+            error: `Invalid entry at index ${i}: missing unitid`,
+          });
+        }
+        normalized.push({
+          unitid,
+          cipCode: toStr(entry?.cipCode),
+          credentialLevel: toStr(entry?.credentialLevel),
+          programName: toStr(entry?.programName),
+          credentialTitle: toStr(entry?.credentialTitle),
+        });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(
+          "DELETE FROM compare_matrix_entries WHERE user_id = $1",
+          [userId],
+        );
+
+        if (normalized.length > 0) {
+          const values: Array<string | number | null> = [];
+          const placeholders = normalized
+            .map((e, idx) => {
+              const base = idx * 6;
+              values.push(
+                userId,
+                e.unitid,
+                e.cipCode,
+                e.credentialLevel,
+                e.programName,
+                e.credentialTitle,
+              );
+              return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
+            })
+            .join(", ");
+
+          await client.query(
+            `INSERT INTO compare_matrix_entries (user_id, unitid, cip_code, credential_level, program_name, credential_title)
+             VALUES ${placeholders}`,
+            values,
+          );
+        }
+
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
+
+      return res.json(normalized);
+    } catch (error) {
+      console.error("Replace compare matrix error:", error);
+      return res.status(500).json({
+        error: "Failed to replace compare matrix",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
 interface ApiErrorBody {
   error: string;
   details?: string;
