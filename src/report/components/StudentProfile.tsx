@@ -20,14 +20,17 @@ export default function StudentProfile({
   pageNumber,
   totalPages,
 }: StudentProfileProps) {
-  const { student, schools } = payload;
+  const { student, schools, college_details } = payload;
 
-  // SVG Bar Chart Math — net price only (the one number that changes with
-  // the family's income bracket).
-  const netPrices = schools
-    .map((s) => s.net_price_bracket)
+  const graduationRateByUnitid = new Map(
+    college_details.map((c) => [c.unitid, c.campus.graduation_rate]),
+  );
+
+  // SVG Bar Chart Math — sticker price, the published list price for each school.
+  const stickerPrices = schools
+    .map((s) => s.sticker_price)
     .filter((v): v is number => v != null);
-  const maxNetPrice = Math.max(...netPrices, 20000);
+  const maxStickerPrice = Math.max(...stickerPrices, 20000);
   const chartHeight = 120;
   const chartWidth = 320;
   const barWidth = 40;
@@ -211,7 +214,7 @@ export default function StudentProfile({
               <th
                 style={{ padding: "10px", fontWeight: 600, textAlign: "right" }}
               >
-                Net Price
+                Graduation Rate
               </th>
               <th
                 style={{ padding: "10px", fontWeight: 600, textAlign: "right" }}
@@ -274,9 +277,10 @@ export default function StudentProfile({
                     fontWeight: "bold",
                   }}
                 >
-                  {s.net_price_bracket != null
-                    ? `$${s.net_price_bracket.toLocaleString()}`
-                    : "Not published"}
+                  {(() => {
+                    const gradRate = graduationRateByUnitid.get(s.unitid);
+                    return gradRate != null ? `${gradRate}%` : "Not published";
+                  })()}
                 </td>
                 <td
                   style={{
@@ -325,12 +329,12 @@ export default function StudentProfile({
                 textTransform: "uppercase",
               }}
             >
-              Net Price by School ($)
+              Sticker Price by School ($)
             </h4>
             <svg width={chartWidth} height={chartHeight + 20}>
               {schools.map((s, i) => {
-                const height = s.net_price_bracket
-                  ? (s.net_price_bracket / maxNetPrice) * chartHeight
+                const height = s.sticker_price
+                  ? (s.sticker_price / maxStickerPrice) * chartHeight
                   : 10;
                 const x = i * (barWidth + gap) + 40;
                 const y = chartHeight - height;
@@ -352,8 +356,8 @@ export default function StudentProfile({
                       fontWeight="bold"
                       fill={theme.color.ink}
                     >
-                      {s.net_price_bracket
-                        ? `$${Math.round(s.net_price_bracket / 1000)}k`
+                      {s.sticker_price
+                        ? `$${Math.round(s.sticker_price / 1000)}k`
                         : "N/P"}
                     </text>
                     <text

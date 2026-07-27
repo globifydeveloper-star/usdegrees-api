@@ -48,6 +48,13 @@ const SOURCES: SourceRow[] = [
       "Regional earnings and employment context used in outcome benchmarking",
     notes: "Longitudinal Employer-Household Dynamics program",
   },
+  {
+    source: "Athletics Disclosure (EADA)",
+    domain: "ope.ed.gov/athletics",
+    usedFor:
+      "Athletics data is sourced from the U.S. Department of Education's Equity in Athletics Disclosure Act (EADA) database.",
+    notes: "Equity in Athletics Disclosure Act, U.S. Dept. of Education",
+  },
 ];
 
 export default function SourcesMethodology({

@@ -191,19 +191,6 @@ export default function Cover({
       <div>
         <div
           style={{
-            textAlign: "center",
-            fontSize: "9px",
-            fontWeight: 700,
-            letterSpacing: "0.2em",
-            color: theme.color.inkFaint,
-            opacity: 0.55,
-            marginBottom: "12px",
-          }}
-        >
-          USDEGREES.COM
-        </div>
-        <div
-          style={{
             width: "100%",
             height: "1px",
             backgroundColor: theme.color.hairlineOnNavy,
@@ -245,7 +232,6 @@ export default function Cover({
               Report Reference
             </div>
             <div>ID: {reportId}</div>
-            <div>Database: College Scorecard</div>
           </div>
           <div style={{ textAlign: "right" }}>
             <div

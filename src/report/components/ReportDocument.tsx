@@ -4,7 +4,7 @@ import AnalystNote from "./AnalystNote";
 import ExecutiveSummary from "./ExecutiveSummary";
 import StudentProfile from "./StudentProfile";
 import CareerOutcomes from "./CareerOutcomes";
-import Recommendation from "./Recommendation";
+import { RecommendationFit, RecommendationQuestion } from "./Recommendation";
 import CampusStudents from "./CampusStudents";
 import Athletics from "./Athletics";
 import TuitionCosts from "./TuitionCosts";
@@ -29,7 +29,7 @@ export default function ReportDocument({
 }: ReportDocumentProps) {
   // Cover is page 1 (no chrome); the remaining pages share the same footer
   // numbering. Total includes every rendered page, Cover included.
-  const totalPages = 11;
+  const totalPages = 12;
   const chrome = { reportId, generatedDate, totalPages };
 
   return (
@@ -64,17 +64,23 @@ export default function ReportDocument({
         pageNumber={5}
         {...chrome}
       />
-      <Recommendation
+      <RecommendationFit
         payload={payload}
         narrative={narrative}
         pageNumber={6}
         {...chrome}
       />
-      <CampusStudents payload={payload} pageNumber={7} {...chrome} />
-      <Athletics payload={payload} pageNumber={8} {...chrome} />
-      <TuitionCosts payload={payload} pageNumber={9} {...chrome} />
-      <SourcesMethodology payload={payload} pageNumber={10} {...chrome} />
-      <Methodology payload={payload} pageNumber={11} {...chrome} />
+      <RecommendationQuestion
+        payload={payload}
+        narrative={narrative}
+        pageNumber={7}
+        {...chrome}
+      />
+      <CampusStudents payload={payload} pageNumber={8} {...chrome} />
+      <Athletics payload={payload} pageNumber={9} {...chrome} />
+      <TuitionCosts payload={payload} pageNumber={10} {...chrome} />
+      <SourcesMethodology payload={payload} pageNumber={11} {...chrome} />
+      <Methodology payload={payload} pageNumber={12} {...chrome} />
     </div>
   );
 }

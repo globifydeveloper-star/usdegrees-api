@@ -17,8 +17,13 @@ export interface RecommendationProps {
  * recommendation, so this page instead lays out fit context per school and
  * closes with the neutral decision framing (plain_english_question). No
  * ranking, no strengths/weaknesses scoring, no winner.
+ *
+ * Split across two pages: the per-school fit cards (RecommendationFit) and
+ * the closing decision-framing panel (RecommendationQuestion). With more
+ * than a couple of compared schools, the fit cards plus the question panel
+ * overflowed a single fixed-height A4 page.
  */
-export default function Recommendation({
+export function RecommendationFit({
   payload,
   narrative,
   reportId,
@@ -43,7 +48,6 @@ export default function Recommendation({
             display: "flex",
             flexDirection: "column",
             gap: "16px",
-            marginBottom: "24px",
           }}
         >
           {payload.schools.map((s, i) => (
@@ -123,6 +127,32 @@ export default function Recommendation({
             </div>
           ))}
         </div>
+      </div>
+
+      <PageFooter
+        reportId={reportId}
+        generatedDate={generatedDate}
+        pageNumber={pageNumber}
+        totalPages={totalPages}
+      />
+    </div>
+  );
+}
+
+export function RecommendationQuestion({
+  narrative,
+  reportId,
+  generatedDate,
+  pageNumber,
+  totalPages,
+}: RecommendationProps) {
+  return (
+    <div style={pageStyle}>
+      <div>
+        <PageHeader
+          sectionLabel="SECTION 04 · ACADEMIC FIT"
+          title="The Decision Ahead"
+        />
 
         {/* Neutral decision framing — no winner named */}
         <div

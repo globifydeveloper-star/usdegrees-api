@@ -340,7 +340,7 @@ function computeDerivedFlags(
       reach.push(s.display_name);
   }
   const costs = schools
-    .map((s) => s.net_price_bracket)
+    .map((s) => s.net_price_bracket ?? s.sticker_price)
     .filter((v): v is number => v != null);
   const earns = schools
     .map((s) => s.program_earnings)
