@@ -133,6 +133,16 @@ router.post(
           [uid, email],
         );
         user = relinked.rows[0];
+        // Silent by default until now — this reassigns an existing row's
+        // identity purely off an email string match, no other verification.
+        // Logged explicitly so a wrong reassignment (e.g. two different
+        // people who both once used the same address) is traceable after
+        // the fact rather than discovered later as "my data disappeared".
+        if (user) {
+          console.warn(
+            `[auth/login] relinked usdusers.id=${user.id} (email="${email}") to firebase_uid=${uid}`,
+          );
+        }
       }
 
       // 3. Reject soft-deleted accounts.
@@ -144,26 +154,62 @@ router.post(
       //    otherwise mirror email/email_verified and bump last_login. Profile
       //    fields (display_name, profile_image) are only set on insert so we
       //    never clobber edits the user made via PATCH /profile.
-      const upserted = await pool.query<User>(
-        `INSERT INTO usdusers
-           (firebase_uid, email, display_name, profile_image, email_verified,
-            auth_provider, role, is_active, created_at, last_login)
-         VALUES ($1, $2, $3, $4, $5, $6, 'student', true, NOW(), NOW())
-         ON CONFLICT (firebase_uid) DO UPDATE SET
-           email          = EXCLUDED.email,
-           email_verified = EXCLUDED.email_verified,
-           last_login     = NOW()
-         RETURNING ${USER_COLUMNS}`,
-        [
-          uid,
-          emailValue,
-          displayName,
-          decoded.picture ?? null,
-          emailVerified,
-          authProvider,
-        ],
-      );
-      user = upserted.rows[0];
+      //
+      //    This is atomic for the firebase_uid identity (ON CONFLICT
+      //    serializes concurrent logins for the same UID at the DB level —
+      //    no separate check-then-write race there). The remaining failure
+      //    mode is a DIFFERENT row already owning `emailValue` (e.g. an
+      //    unrelated signup, or a stale duplicate) — that still violates
+      //    usdusers_email_key even though the conflict target here is
+      //    firebase_uid, not email. Caught below instead of bubbling to the
+      //    generic 500 handler, since silently overwriting a stranger's
+      //    email onto this row would be an account-hijack bug, not a fix.
+      try {
+        const upserted = await pool.query<User>(
+          `INSERT INTO usdusers
+             (firebase_uid, email, display_name, profile_image, email_verified,
+              auth_provider, role, is_active, created_at, last_login)
+           VALUES ($1, $2, $3, $4, $5, $6, 'student', true, NOW(), NOW())
+           ON CONFLICT (firebase_uid) DO UPDATE SET
+             email          = EXCLUDED.email,
+             email_verified = EXCLUDED.email_verified,
+             last_login     = NOW()
+           RETURNING ${USER_COLUMNS}`,
+          [
+            uid,
+            emailValue,
+            displayName,
+            decoded.picture ?? null,
+            emailVerified,
+            authProvider,
+          ],
+        );
+        user = upserted.rows[0];
+      } catch (err) {
+        const pgErr = err as { code?: string; constraint?: string };
+        if (
+          pgErr.code === "23505" &&
+          pgErr.constraint === "usdusers_email_key"
+        ) {
+          const conflict = await pool.query<{
+            id: number;
+            firebase_uid: string | null;
+          }>(
+            `SELECT id, firebase_uid FROM usdusers WHERE email = $1 AND firebase_uid IS DISTINCT FROM $2`,
+            [emailValue, uid],
+          );
+          console.error(
+            `[auth/login] 409 — email collision: uid=${uid} tried to claim email="${emailValue}", ` +
+              `already held by usdusers.id=${conflict.rows[0]?.id ?? "unknown"} ` +
+              `(firebase_uid=${conflict.rows[0]?.firebase_uid ?? "null"})`,
+          );
+          return res.status(409).json({
+            error:
+              "This email address is already associated with a different account. Please contact support to resolve this before signing in again.",
+          });
+        }
+        throw err;
+      }
 
       const token = jwt.sign({ sub: uid }, SECRET, {
         expiresIn: APP_JWT_TTL,
@@ -210,7 +256,9 @@ router.post(
 
       if (!APPLE_CLIENT_ID) {
         console.error("[auth/apple] 500 — APPLE_CLIENT_ID is not configured");
-        return res.status(500).json({ error: "Apple sign-in is not configured" });
+        return res
+          .status(500)
+          .json({ error: "Apple sign-in is not configured" });
       }
 
       let payload: JWTPayload;
@@ -222,7 +270,9 @@ router.post(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[auth/apple] 401 — jwtVerify failed: ${message}`);
-        return res.status(401).json({ error: "Invalid or expired Apple token" });
+        return res
+          .status(401)
+          .json({ error: "Invalid or expired Apple token" });
       }
 
       const sub = payload.sub;
@@ -244,7 +294,8 @@ router.post(
       // no need to gate this on "is this a new user" — it just never matters
       // again once the row exists.
       const fullName = req.body?.full_name?.trim() || null;
-      const displayName = fullName || (email ? email.split("@")[0] : "New User");
+      const displayName =
+        fullName || (email ? email.split("@")[0] : "New User");
 
       // Namespace the Apple `sub` into firebase_uid so this row keys the same
       // way Firebase-issued users do — verifyToken and GET /auth/me look users
