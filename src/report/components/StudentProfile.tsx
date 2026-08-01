@@ -333,8 +333,15 @@ export default function StudentProfile({
             </h4>
             <svg width={chartWidth} height={chartHeight + 20}>
               {schools.map((s, i) => {
+                // Reserve headroom above the tallest possible bar for its
+                // value label — without it, a bar at (or near) the max
+                // price fills the full chartHeight and its label's y lands
+                // at/above 0, clipping outside the SVG's viewBox and
+                // rendering invisible.
+                const labelHeadroom = 18;
                 const height = s.sticker_price
-                  ? (s.sticker_price / maxStickerPrice) * chartHeight
+                  ? (s.sticker_price / maxStickerPrice) *
+                    (chartHeight - labelHeadroom)
                   : 10;
                 const x = i * (barWidth + gap) + 40;
                 const y = chartHeight - height;

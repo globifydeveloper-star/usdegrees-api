@@ -30,42 +30,46 @@ export default function Cover({
         flexDirection: "column",
         justifyContent: "space-between",
         pageBreakAfter: "always",
+        position: "relative",
       }}
     >
+      {/* Corner ribbon — hangs from the true top-left of the page, ignoring
+          the page padding, so it reads as a tucked-in banner rather than an
+          inline logo. */}
+      <img
+        src={logoDataUri}
+        alt="U.S. Degrees"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: "30px",
+          width: "108px",
+          height: "auto",
+        }}
+      />
+
       {/* Top Header Section */}
       <div>
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent: "flex-end",
             alignItems: "center",
           }}
         >
-          {/* Sized to match the wordmark it replaces (28px bold text ≈ 32px logo height). */}
-          <img
-            src={logoDataUri}
-            alt="USDegrees.com"
-            style={{ height: "32px", width: "auto" }}
-          />
           <div
             style={{
               fontSize: "11px",
               fontWeight: 600,
               color: theme.color.inkFaint,
               letterSpacing: "0.1em",
+              paddingBottom: "4px",
+              borderBottom: `1px solid ${theme.color.hairlineOnNavy}`,
             }}
           >
             CONFIDENTIAL REPORT
           </div>
         </div>
-        <div
-          style={{
-            width: "100%",
-            height: "1px",
-            backgroundColor: theme.color.hairlineOnNavy,
-            marginTop: "15px",
-          }}
-        ></div>
       </div>
 
       {/* Middle Hero Section */}

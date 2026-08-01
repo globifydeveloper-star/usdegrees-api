@@ -17,7 +17,7 @@ import type { C1LitePayload, C1LiteNarrative } from "./reportPrompt";
 let cachedLogoDataUri: string | null = null;
 function getLogoDataUri(): string {
   if (cachedLogoDataUri) return cachedLogoDataUri;
-  const logoPath = path.join(__dirname, "..", "..", "..", "public", "images", "usd_logo.png");
+  const logoPath = path.join(__dirname, "..", "..", "..", "public", "images", "reportlogo.png");
   const base64 = fs.readFileSync(logoPath).toString("base64");
   cachedLogoDataUri = `data:image/png;base64,${base64}`;
   return cachedLogoDataUri;

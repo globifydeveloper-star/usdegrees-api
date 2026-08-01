@@ -211,6 +211,52 @@ export default function Athletics({
                   </div>
                 </div>
 
+                {a.hasRosterData && (
+                  <div
+                    style={{
+                      marginBottom: "10px",
+                      paddingTop: "8px",
+                      borderTop: `1px solid ${theme.color.hairline}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: theme.color.inkMuted,
+                        textTransform: "uppercase",
+                        fontSize: "9px",
+                        fontWeight: 700,
+                        marginBottom: "6px",
+                      }}
+                    >
+                      Sports Offered
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "6px",
+                      }}
+                    >
+                      {a.roster.map((r) => (
+                        <span
+                          key={r.sport}
+                          style={{
+                            fontSize: "9.5px",
+                            fontWeight: 600,
+                            color: theme.color.navy,
+                            backgroundColor: theme.color.panelBgAlt,
+                            border: `1px solid ${theme.color.hairline}`,
+                            borderRadius: "20px",
+                            padding: "3px 9px",
+                          }}
+                        >
+                          {r.sport}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {a.divisionBenchmark && (
                   <div
                     style={{

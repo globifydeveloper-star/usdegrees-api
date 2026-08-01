@@ -272,22 +272,40 @@ async function fetchSchool(unitid: number) {
 // Campus & student body (students table) — school-level, not program-level.
 // ------------------------------------------------------------------
 async function fetchCampus(unitid: number) {
-  const { rows } = await pool.query(
-    `SELECT enrollment_undergrad_12_month, enrollment_grad_12_month, student_faculty_ratio,
-            graduation_rate, retention_rate, demographics_men, demographics_women, size_category
-       FROM students WHERE unitid = $1 LIMIT 1`,
-    [unitid],
-  );
-  const data = rows[0];
+  // students.graduation_rate is always null in this DB — the real figure
+  // lives in the completion table (already 0–100, not a fraction), same
+  // source routes/compare.ts and routes/programs.ts read graduation rate
+  // from.
+  const [studentsResult, completionResult] = await Promise.all([
+    pool.query(
+      `SELECT enrollment_undergrad_12_month, enrollment_grad_12_month, student_faculty_ratio,
+              retention_rate, demographics_men, demographics_women, size_category
+         FROM students WHERE unitid = $1 LIMIT 1`,
+      [unitid],
+    ),
+    pool.query(
+      `SELECT completion_rate FROM completion WHERE unitid = $1 LIMIT 1`,
+      [unitid],
+    ),
+  ]);
+  const data = studentsResult.rows[0];
+  const completion = completionResult.rows[0];
   const num = (v: unknown) => (v != null ? Number(v) : null);
+  // retention_rate/demographics_* are stored as fractions (0–1, e.g. 0.395
+  // for 39.5%) — unlike completion_rate, which is already 0–100.
+  const pctFromFraction = (v: unknown) =>
+    v != null ? Math.round(Number(v) * 100) : null;
   return {
     enrollment_undergrad: data?.enrollment_undergrad_12_month ?? null,
     enrollment_grad: data?.enrollment_grad_12_month ?? null,
     student_faculty_ratio: num(data?.student_faculty_ratio),
-    graduation_rate: num(data?.graduation_rate),
-    retention_rate: num(data?.retention_rate),
-    demographics_men_pct: num(data?.demographics_men),
-    demographics_women_pct: num(data?.demographics_women),
+    graduation_rate:
+      completion?.completion_rate != null
+        ? Math.round(Number(completion.completion_rate))
+        : null,
+    retention_rate: pctFromFraction(data?.retention_rate),
+    demographics_men_pct: pctFromFraction(data?.demographics_men),
+    demographics_women_pct: pctFromFraction(data?.demographics_women),
     size_category: data?.size_category ?? null,
   };
 }
@@ -442,10 +460,19 @@ export async function buildC1LitePayload(args: {
       adm?.admission_rate != null ? Number(adm.admission_rate) : null;
     const rateFraction =
       rawRate == null ? null : rawRate > 1 ? rawRate / 100 : rawRate;
-    const showRate =
-      disc.show_admission_rate_required && adm?.publish_publicly !== false;
+    // disc.show_admission_rate_required gates the AI narrative's prose only
+    // (the model reads it directly off `disclosure` — see reportPrompt.ts
+    // BRANCHES). It must NOT null out the raw figure here too: that's a
+    // narrative-category classification (mostly false, e.g.
+    // E_TEST_REQUIRED_NO_RANGE), not a per-school "don't publish" signal —
+    // gating on it here hid the admit rate in the data tables/matrix almost
+    // universally, unlike /compare which shows the raw rate unconditionally.
+    // publish_publicly is the genuine per-school suppression flag (also
+    // honored by routes/overviewDetails.ts) and stays authoritative.
     const admitRatePct =
-      showRate && rateFraction != null ? Math.round(rateFraction * 100) : null;
+      adm?.publish_publicly !== false && rateFraction != null
+        ? Math.round(rateFraction * 100)
+        : null;
 
     // Fit — skip for open-admission / test-not-used / closed.
     let fitScore: number | null = null;

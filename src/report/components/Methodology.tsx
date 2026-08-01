@@ -74,6 +74,68 @@ export default function Methodology({
                 outcome label (avg_debt vs. cohort earnings) — reported as-is,
                 not computed or interpreted by this report.
               </div>
+              <div>
+                <strong>
+                  • Program Earnings Data Imputation — U.S. Degrees Methodology:
+                </strong>{" "}
+                Where PSEO program earnings are missing, U.S. Degrees may
+                provide modelled values derived only from real, reported
+                earnings data using credential- and field-specific growth
+                patterns. Estimates are never chained from other estimates, and
+                values without a valid real-data anchor are not generated.
+                {/* Earnings methodology labels */}
+                <div
+                  style={{
+                    marginTop: "7px",
+                    marginLeft: "12px",
+                    paddingLeft: "10px",
+                    borderLeft: `2px solid ${theme.color.gold}`,
+                    fontSize: "10.5px",
+                    lineHeight: "1.45",
+                    color: theme.color.inkMuted,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      color: theme.color.navy,
+                      marginBottom: "3px",
+                    }}
+                  >
+                    Earnings value labels:
+                  </div>
+
+                  <div>
+                    <strong>Reported:</strong> Real PSEO value — measured, not
+                    estimated.
+                  </div>
+
+                  <div>
+                    <strong>Interpolated:</strong> Estimated between two real
+                    points; most reliable estimate.
+                  </div>
+
+                  <div>
+                    <strong>Extrapolated:</strong> Estimated from a nearer
+                    real-data anchor.
+                  </div>
+
+                  <div>
+                    <strong>Low Confidence:</strong> Single-anchor or
+                    declining-trajectory estimate; use with caution.
+                  </div>
+
+                  <div>
+                    <strong>Skipped Future:</strong> Not generated because the
+                    outcome year has not yet occurred.
+                  </div>
+
+                  <div>
+                    <strong>Skipped No Anchor:</strong> Not generated because no
+                    real value was available to anchor the estimate.
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -99,12 +161,15 @@ export default function Methodology({
               }}
             >
               This report is neutral and comparative only — it does not rank,
-              recommend, or select a school. Every figure shown is drawn
-              directly from public federal datasets; none are computed,
-              estimated, or rounded by this report. Where a figure is not
-              published for a school, it is shown as "Not published," never
-              substituted with a typical or estimated value. Confirm all figures
-              directly with each institution before making a decision.
+              recommend, or select a school. Figures are drawn from public
+              federal datasets; however, where PSEO program earnings are
+              unavailable, clearly labelled values may be modelled using the
+              U.S. Degrees earnings imputation methodology. These estimates are
+              derived only from real reported earnings, are never chained from
+              other estimates, and are not presented as official
+              Census-published figures. Where no reported value or valid
+              real-data anchor exists, no estimate is generated. Confirm all
+              figures directly with each institution before making a decision.
             </p>
           </div>
         </div>
