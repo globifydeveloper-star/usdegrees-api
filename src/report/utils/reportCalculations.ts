@@ -56,7 +56,7 @@ export interface ReportCalculatedData {
 
     // Admission Fit
     admissionFit: {
-      category: "Safety" | "Match" | "Reach" | "Unavailable";
+      category: "Target/Match" | "Reach" | "Unavailable";
       score: number;
       explanation: string;
     };

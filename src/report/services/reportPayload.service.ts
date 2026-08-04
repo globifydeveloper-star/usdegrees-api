@@ -22,6 +22,7 @@ import pool from "../../db/client";
 import type { C1LitePayload } from "./reportPrompt";
 import { calculateAdmissionFit } from "../utils/admissionScore";
 import { analyzeRoi } from "../utils/roi";
+import CREDENTIAL_LEVELS from "../../constants/credentials";
 import { getEarningsForProgram } from "../../services/earnings.service";
 import { getAthleticsProfile } from "../../services/athletics.service";
 
@@ -240,7 +241,7 @@ async function fetchDebt(unitid: number) {
 
 async function fetchStudent(userId: number) {
   const { rows } = await pool.query(
-    `SELECT display_name, gpa, sat_score, sat_math, sat_reading_writing, act_score,
+    `SELECT display_name, address, gpa, sat_score, sat_math, sat_reading_writing, act_score,
             graduation_year, high_school_name, preferred_degree_level, preferred_college_type
        FROM usdusers WHERE id = $1 LIMIT 1`,
     [userId],
@@ -278,7 +279,7 @@ async function fetchCampus(unitid: number) {
   // from.
   const [studentsResult, completionResult] = await Promise.all([
     pool.query(
-      `SELECT enrollment_undergrad_12_month, enrollment_grad_12_month, student_faculty_ratio,
+      `SELECT undergrad_12_month, grad_12_month, student_faculty_ratio,
               retention_rate, demographics_men, demographics_women, size_category
          FROM students WHERE unitid = $1 LIMIT 1`,
       [unitid],
@@ -295,17 +296,21 @@ async function fetchCampus(unitid: number) {
   // for 39.5%) — unlike completion_rate, which is already 0–100.
   const pctFromFraction = (v: unknown) =>
     v != null ? Math.round(Number(v) * 100) : null;
+  // Demographics keep one decimal place (e.g. 39.5%) instead of rounding to
+  // a whole number, per the Student Body Composition section's display.
+  const pctFromFractionDecimal = (v: unknown) =>
+    v != null ? Math.round(Number(v) * 1000) / 10 : null;
   return {
-    enrollment_undergrad: data?.enrollment_undergrad_12_month ?? null,
-    enrollment_grad: data?.enrollment_grad_12_month ?? null,
+    enrollment_undergrad: num(data?.undergrad_12_month),
+    enrollment_grad: num(data?.grad_12_month),
     student_faculty_ratio: num(data?.student_faculty_ratio),
     graduation_rate:
       completion?.completion_rate != null
         ? Math.round(Number(completion.completion_rate))
         : null,
     retention_rate: pctFromFraction(data?.retention_rate),
-    demographics_men_pct: pctFromFraction(data?.demographics_men),
-    demographics_women_pct: pctFromFraction(data?.demographics_women),
+    demographics_men_pct: pctFromFractionDecimal(data?.demographics_men),
+    demographics_women_pct: pctFromFractionDecimal(data?.demographics_women),
     size_category: data?.size_category ?? null,
   };
 }
@@ -318,9 +323,9 @@ async function fetchCampus(unitid: number) {
 // ------------------------------------------------------------------
 async function fetchTuitionDetail(unitid: number) {
   const { rows } = await pool.query(
-    `SELECT sticker_price_by_api, tuition_in_state, tuition_out_state, roomboard_oncampus,
-            roomboard_offcampus, booksupply, otherexpense_oncampus, otherexpense_offcampus,
-            avg_net_price_public, avg_net_price_private, avg_net_price_overall
+    `SELECT sticker_price_by_api, for_roi_data, tuition_in_state, tuition_out_state,
+            roomboard_oncampus, roomboard_offcampus, booksupply, otherexpense_oncampus,
+            otherexpense_offcampus, otherexpense_withfamily
        FROM costs WHERE unitid = $1 LIMIT 1`,
     [unitid],
   );
@@ -328,6 +333,7 @@ async function fetchTuitionDetail(unitid: number) {
   const num = (v: unknown) => (v != null ? Math.round(Number(v)) : null);
   return {
     sticker_price: num(data?.sticker_price_by_api),
+    net_price: num(data?.for_roi_data),
     tuition_in_state: num(data?.tuition_in_state),
     tuition_out_state: num(data?.tuition_out_state),
     room_board_on_campus: num(data?.roomboard_oncampus),
@@ -335,9 +341,7 @@ async function fetchTuitionDetail(unitid: number) {
     books_supply: num(data?.booksupply),
     other_expense_on_campus: num(data?.otherexpense_oncampus),
     other_expense_off_campus: num(data?.otherexpense_offcampus),
-    avg_net_price_public: num(data?.avg_net_price_public),
-    avg_net_price_private: num(data?.avg_net_price_private),
-    avg_net_price_overall: num(data?.avg_net_price_overall),
+    other_expense_with_family: num(data?.otherexpense_withfamily),
   };
 }
 
@@ -426,10 +430,16 @@ export async function buildC1LitePayload(args: {
   for (const { unitid, programCip, programName } of args.schools) {
     const core = await fetchSchool(unitid);
     schoolCache.set(unitid, core);
-    const displayName = programName ? `${core.name} — ${programName}` : core.name;
     const credentialLevel = programCip
       ? await resolveCredentialLevel(unitid, programCip)
       : null;
+    const credentialLevelName =
+      credentialLevel != null
+        ? CREDENTIAL_LEVELS.find((l) => l.id === credentialLevel)?.name ?? null
+        : null;
+    const displayName = programName
+      ? `${core.name} — ${programName}${credentialLevelName ? ` (${credentialLevelName})` : ""}`
+      : core.name;
 
     const [np, adm, earn, costs, debt, roi] = await Promise.all([
       fetchNetPriceAndSector(unitid, incomeBracket),
@@ -592,6 +602,7 @@ export async function buildC1LitePayload(args: {
     },
     student: {
       display_name: student.display_name,
+      address: student.address ?? null,
       gpa: student.gpa,
       sat_score: student.sat_score,
       sat_math: student.sat_math,

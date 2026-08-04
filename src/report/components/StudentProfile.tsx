@@ -26,16 +26,6 @@ export default function StudentProfile({
     college_details.map((c) => [c.unitid, c.campus.graduation_rate]),
   );
 
-  // SVG Bar Chart Math — sticker price, the published list price for each school.
-  const stickerPrices = schools
-    .map((s) => s.sticker_price)
-    .filter((v): v is number => v != null);
-  const maxStickerPrice = Math.max(...stickerPrices, 20000);
-  const chartHeight = 120;
-  const chartWidth = 320;
-  const barWidth = 40;
-  const gap = 30;
-
   return (
     <div style={pageStyle}>
       <div>
@@ -306,91 +296,6 @@ export default function StudentProfile({
             ))}
           </tbody>
         </table>
-
-        {/* Net Price Chart */}
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <div
-            style={{
-              backgroundColor: theme.color.panelBg,
-              border: `1px solid ${theme.color.hairline}`,
-              borderRadius: "12px",
-              padding: "16px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-            }}
-          >
-            <h4
-              style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                color: theme.color.navy,
-                margin: "0 0 12px 0",
-                textTransform: "uppercase",
-              }}
-            >
-              Sticker Price by School ($)
-            </h4>
-            <svg width={chartWidth} height={chartHeight + 20}>
-              {schools.map((s, i) => {
-                // Reserve headroom above the tallest possible bar for its
-                // value label — without it, a bar at (or near) the max
-                // price fills the full chartHeight and its label's y lands
-                // at/above 0, clipping outside the SVG's viewBox and
-                // rendering invisible.
-                const labelHeadroom = 18;
-                const height = s.sticker_price
-                  ? (s.sticker_price / maxStickerPrice) *
-                    (chartHeight - labelHeadroom)
-                  : 10;
-                const x = i * (barWidth + gap) + 40;
-                const y = chartHeight - height;
-                return (
-                  <g key={i}>
-                    <rect
-                      x={x}
-                      y={y}
-                      width={barWidth}
-                      height={height}
-                      fill={theme.color.navy}
-                      rx="4"
-                    />
-                    <text
-                      x={x + barWidth / 2}
-                      y={y - 6}
-                      textAnchor="middle"
-                      fontSize="9px"
-                      fontWeight="bold"
-                      fill={theme.color.ink}
-                    >
-                      {s.sticker_price
-                        ? `$${Math.round(s.sticker_price / 1000)}k`
-                        : "N/P"}
-                    </text>
-                    <text
-                      x={x + barWidth / 2}
-                      y={chartHeight + 14}
-                      textAnchor="middle"
-                      fontSize="8px"
-                      fontWeight="600"
-                      fill={theme.color.inkMuted}
-                    >
-                      {s.name.split(" ")[0]}
-                    </text>
-                  </g>
-                );
-              })}
-              <line
-                x1="0"
-                y1={chartHeight}
-                x2={chartWidth}
-                y2={chartHeight}
-                stroke={theme.color.hairline}
-                strokeWidth="1"
-              />
-            </svg>
-          </div>
-        </div>
       </div>
 
       <PageFooter

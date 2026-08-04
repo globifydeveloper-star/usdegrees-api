@@ -24,6 +24,7 @@ export interface C1LitePayload {
   };
   student: {
     display_name: string;
+    address: string | null;
     gpa: number | null;
     sat_score: number | null;
     sat_math: number | null;
@@ -96,7 +97,10 @@ export interface C1LitePayload {
       size_category: string | null;
     };
     tuition: {
+      // Estimated average price after student aid (costs.sticker_price_by_api).
       sticker_price: number | null;
+      // Net price before estimated financial aid calculations (costs.for_roi_data).
+      net_price: number | null;
       tuition_in_state: number | null;
       tuition_out_state: number | null;
       room_board_on_campus: number | null;
@@ -104,9 +108,7 @@ export interface C1LitePayload {
       books_supply: number | null;
       other_expense_on_campus: number | null;
       other_expense_off_campus: number | null;
-      avg_net_price_public: number | null;
-      avg_net_price_private: number | null;
-      avg_net_price_overall: number | null;
+      other_expense_with_family: number | null;
     };
     athletics: AthleticsProfile | null;
   }>;
@@ -157,7 +159,15 @@ BRANCHES:
 - For each school, honor its disclosure block. If show_admission_rate_required is false OR
   admit_rate is null, do not state an admit rate. Copy disclosure.supporting_copy verbatim;
   never rewrite it. Append disclaimer_text unchanged if present.
-- If fit_label is "Not applicable", state fit is not applicable; do not report a fit score.
+- If fit_label is "Not applicable", write "Academic Fit: Not applicable." followed by the
+  disclosure.supporting_copy verbatim, explaining why a test-score-based fit classification
+  cannot be calculated. Do not report a fit score.
+- There is no "Safety" tier — fit_label is only "Target/Match", "Reach", or "Not applicable".
+  When fit_label is "Target/Match" or "Reach", state the published SAT range (sat_25–sat_75),
+  where the student's sat_score falls relative to it, and the resulting fit_label. Always add:
+  "This classification is an Admission Fit Estimate and does not represent admission
+  probability or likelihood of acceptance. Check the school's website for current admission
+  requirements." Never phrase a category as a chance or likelihood of getting in.
 - merit_flag_schools: note the student's SAT exceeds the school's 75th percentile;
   use "may qualify" only, never promise aid.
 - reach_flag_schools: supportive framing — admission would rest on non-test strengths,
@@ -175,12 +185,14 @@ what disambiguates two entries for the same college.
 WRITE ONLY THESE (lengths are ceilings):
 - two_minute_lines: exactly one per school, in payload order. Strongest cost-or-outcomes
   fact + one counterweight fact + a page reference. Both facts payload values. Never two
-  positives or two negatives. ≤40 words each.
+  positives or two negatives. Label the program_earnings figure as "Program Earnings from
+  LEHD data" (not "program earnings" and not a bare vintage year). ≤40 words each.
 - critical_finding: name any merit-flag school, any reach-flag school, the highest
   program_earnings school with the earnings range, the cost range, and any school whose
   fit is "Not applicable". Nothing else. ≤110 words.
 - net_price_note: state cost_range_low/high and the bracket label if present. ≤90 words.
-- fit_sentences: one per school — bands if present, disclosure copy, merit/reach framing. ≤45 words each.
+- fit_sentences: one per school — bands if present, disclosure copy, merit/reach framing, and
+  the Admission Fit Estimate disclaimer (see BRANCHES). ≤70 words each.
 - earnings_paragraph: program_earnings per school with vintage + method flag, and the
   earnings range. No "best". ≤90 words.
 - debt_burden_paragraph: state each school's avg_debt (typical debt at completion) and its
@@ -264,7 +276,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
 
   const two_minute_lines = schools.map((s) => ({
     school: s.display_name,
-    line: `${costClause(s)}; program earnings ${money(s.program_earnings)}${s.earnings_vintage ? ` (${s.earnings_vintage})` : ""}.`,
+    line: `${costClause(s)}; Program Earnings from LEHD data ${money(s.program_earnings)}.`,
   }));
 
   const findingParts: string[] = [];
@@ -282,7 +294,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
     findingParts.push(`Program earnings across the selected schools range from ${money(Number(derived_flags.earnings_range_low))} to ${money(Number(derived_flags.earnings_range_high))}.`);
   }
   if (derived_flags.cost_range_low && derived_flags.cost_range_high) {
-    findingParts.push(`Net price ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.`);
+    findingParts.push(`Sticker Price ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.`);
   }
   const critical_finding = findingParts.length
     ? findingParts.join(" ")
@@ -298,13 +310,27 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
     ? `Net price below reflects the ${student.income_bracket_label} income bracket. ${derived_flags.cost_range_low && derived_flags.cost_range_high ? `Across the selected schools it ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.` : "Figures are not published for one or more schools."}`
     : `No income bracket was provided, so net price below is the posted figure, not personalized. ${derived_flags.cost_range_low && derived_flags.cost_range_high ? `Across the selected schools it ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.` : ""}`;
 
-  const fit_sentences = schools.map((s) => ({
-    school: s.display_name,
-    sentence:
-      s.fit_label === "Not applicable"
-        ? `Fit is not applicable at ${s.display_name}. ${s.disclosure.supporting_copy}`
-        : `${s.display_name}: SAT band ${s.sat_25 != null && s.sat_75 != null ? `${s.sat_25}–${s.sat_75}` : "not published"}. ${s.disclosure.supporting_copy}`,
-  }));
+  const studentSat = student.sat_score;
+  const fit_sentences = schools.map((s) => {
+    if (s.fit_label === "Not applicable") {
+      return {
+        school: s.display_name,
+        sentence: `Academic Fit: Not applicable. ${s.disclosure.supporting_copy}`,
+      };
+    }
+    if (s.sat_25 == null || s.sat_75 == null || studentSat == null) {
+      return {
+        school: s.display_name,
+        sentence: `${s.display_name}: SAT band ${s.sat_25 != null && s.sat_75 != null ? `${s.sat_25}–${s.sat_75}` : "not published"}. ${s.disclosure.supporting_copy}`,
+      };
+    }
+    const relation =
+      studentSat < s.sat_25 ? "falls below" : studentSat > s.sat_75 ? "falls above" : "falls within";
+    return {
+      school: s.display_name,
+      sentence: `${s.display_name}: Published SAT range: ${s.sat_25}–${s.sat_75}. The student's SAT score of ${studentSat} ${relation} this range, indicating a ${s.fit_label} academic fit. This classification is an Admission Fit Estimate and does not represent admission probability or likelihood of acceptance. Check the school's website for current admission requirements.`,
+    };
+  });
 
   const earnings_paragraph = schools
     .map((s) => `${s.display_name}: ${money(s.program_earnings)}${s.earnings_vintage ? ` (${s.earnings_vintage}${s.earnings_method_flag ? `, ${s.earnings_method_flag}` : ""})` : ""}.`)

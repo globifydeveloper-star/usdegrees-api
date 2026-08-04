@@ -102,8 +102,8 @@ export default function Cover({
             marginBottom: "18px",
           }}
         >
-          Prepared for {student.display_name} · {schools.length} institution
-          {schools.length === 1 ? "" : "s"} compared
+          Prepared for {student.display_name} · {schools.length} Program
+          {schools.length === 1 ? "" : "s"} Compared
         </div>
         <h1
           style={{
@@ -221,6 +221,7 @@ export default function Cover({
               Prepared For
             </div>
             <div>{student.display_name}</div>
+            {student.address && <div>{student.address}</div>}
             {student.preferred_degree_level && (
               <div>Preferred level: {student.preferred_degree_level}</div>
             )}

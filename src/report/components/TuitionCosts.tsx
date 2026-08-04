@@ -67,31 +67,36 @@ export default function TuitionCosts({
                 textAlign: "left",
               }}
             >
-              <th style={{ padding: "8px", fontWeight: 600 }}>College</th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
+              <th style={{ padding: "6px", fontWeight: 600 }}>College</th>
+              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
                 Sticker Price
               </th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
+              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+                Net Price
+              </th>
+              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
                 Tuition (In-State)
               </th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
+              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
                 Tuition (Out-of-State)
               </th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
+              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
                 Room & Board (On-Campus)
               </th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
+              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+                Room & Board (Off-Campus)
+              </th>
+              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
                 Books & Supplies
+              </th>
+              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+                Other Expense (On-Campus)
+              </th>
+              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+                Other Expense (Off-Campus)
+              </th>
+              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+                Other Expense (With Family)
               </th>
             </tr>
           </thead>
@@ -107,7 +112,7 @@ export default function TuitionCosts({
               >
                 <td
                   style={{
-                    padding: "8px",
+                    padding: "6px",
                     fontWeight: 700,
                     color: theme.color.navy,
                   }}
@@ -116,7 +121,7 @@ export default function TuitionCosts({
                 </td>
                 <td
                   style={{
-                    padding: "8px",
+                    padding: "6px",
                     textAlign: "right",
                     color: theme.color.navy,
                     fontWeight: 700,
@@ -124,143 +129,50 @@ export default function TuitionCosts({
                 >
                   {money(c.tuition.sticker_price)}
                 </td>
-                <td
-                  style={{
-                    padding: "8px",
-                    textAlign: "right",
-                    color: theme.color.ink,
-                  }}
-                >
+                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                  {money(c.tuition.net_price)}
+                </td>
+                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.tuition_in_state)}
                 </td>
-                <td
-                  style={{
-                    padding: "8px",
-                    textAlign: "right",
-                    color: theme.color.ink,
-                  }}
-                >
+                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.tuition_out_state)}
                 </td>
-                <td
-                  style={{
-                    padding: "8px",
-                    textAlign: "right",
-                    color: theme.color.ink,
-                  }}
-                >
+                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.room_board_on_campus)}
                 </td>
-                <td
-                  style={{
-                    padding: "8px",
-                    textAlign: "right",
-                    color: theme.color.ink,
-                  }}
-                >
+                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                  {money(c.tuition.room_board_off_campus)}
+                </td>
+                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.books_supply)}
+                </td>
+                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                  {money(c.tuition.other_expense_on_campus)}
+                </td>
+                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                  {money(c.tuition.other_expense_off_campus)}
+                </td>
+                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                  {money(c.tuition.other_expense_with_family)}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
 
-        <h3
+        <p
           style={{
-            fontSize: "13px",
-            fontWeight: 700,
-            color: theme.color.navy,
-            margin: "0 0 12px 0",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
+            fontSize: "10px",
+            lineHeight: "1.5",
+            color: theme.color.inkMuted,
+            margin: 0,
           }}
         >
-          Average Net Price on File (Unpersonalized)
-        </h3>
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            fontSize: "10.5px",
-            border: `1px solid ${theme.color.hairline}`,
-          }}
-        >
-          <thead>
-            <tr
-              style={{
-                backgroundColor: theme.color.navy,
-                color: theme.color.white,
-                textAlign: "left",
-              }}
-            >
-              <th style={{ padding: "8px", fontWeight: 600 }}>College</th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
-                Avg Net Price (Public)
-              </th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
-                Avg Net Price (Private)
-              </th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
-                Avg Net Price (Overall)
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {college_details.map((c, i) => (
-              <tr
-                key={c.unitid}
-                style={{
-                  borderBottom: `1px solid ${theme.color.hairline}`,
-                  backgroundColor:
-                    i % 2 === 0 ? theme.color.panelBgAlt : theme.color.panelBg,
-                }}
-              >
-                <td
-                  style={{
-                    padding: "8px",
-                    fontWeight: 700,
-                    color: theme.color.navy,
-                  }}
-                >
-                  {c.name}
-                </td>
-                <td
-                  style={{
-                    padding: "8px",
-                    textAlign: "right",
-                    color: theme.color.ink,
-                  }}
-                >
-                  {money(c.tuition.avg_net_price_public)}
-                </td>
-                <td
-                  style={{
-                    padding: "8px",
-                    textAlign: "right",
-                    color: theme.color.ink,
-                  }}
-                >
-                  {money(c.tuition.avg_net_price_private)}
-                </td>
-                <td
-                  style={{
-                    padding: "8px",
-                    textAlign: "right",
-                    color: theme.color.ink,
-                  }}
-                >
-                  {money(c.tuition.avg_net_price_overall)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          Sticker Price is the estimated average price after student aid. Net
+          Price is the figure on file before estimated financial-aid
+          calculations.
+        </p>
       </div>
 
       <PageFooter

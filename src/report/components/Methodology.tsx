@@ -106,7 +106,7 @@ export default function Methodology({
                   </div>
 
                   <div>
-                    <strong>Reported:</strong> Real PSEO value — measured, not
+                    <strong>User Reported:</strong> Real PSEO value — measured, not
                     estimated.
                   </div>
 
@@ -205,7 +205,7 @@ export default function Methodology({
                 color: theme.color.navy,
               }}
             >
-              SYSTEM VERIFIED & LOCKED
+              SCHEMA VALIDATED
             </div>
           </div>
           <div style={{ textAlign: "right" }}>

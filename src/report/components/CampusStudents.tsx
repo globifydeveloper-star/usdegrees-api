@@ -15,8 +15,13 @@ function pct(v: number | null): string {
   return v != null ? `${v}%` : "Not published";
 }
 
+// Demographics percentages always render with one decimal place.
+function pctDecimal(v: number | null): string {
+  return v != null ? `${v.toFixed(1)}%` : "Not published";
+}
+
 function num(v: number | null): string {
-  return v != null ? v.toLocaleString() : "Not published";
+  return v != null ? v.toLocaleString() : "Not Published";
 }
 
 /**
@@ -207,7 +212,7 @@ export default function CampusStudents({
               <div style={{ color: theme.color.inkMuted }}>
                 {c.campus.demographics_men_pct != null ||
                 c.campus.demographics_women_pct != null
-                  ? `${pct(c.campus.demographics_men_pct)} men · ${pct(c.campus.demographics_women_pct)} women`
+                  ? `${pctDecimal(c.campus.demographics_men_pct)} men · ${pctDecimal(c.campus.demographics_women_pct)} women`
                   : "Demographic breakdown not published"}
                 {c.campus.size_category ? ` · ${c.campus.size_category}` : ""}
               </div>

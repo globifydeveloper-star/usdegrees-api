@@ -69,8 +69,11 @@ export default function CareerOutcomes({
           </div>
           {/* debt_ratio_text is a reported federal label, not this report's
               verdict on a school — rendered plain, no warning styling. */}
-          <p style={{ margin: 0, color: theme.color.ink }}>
+          <p style={{ margin: "0 0 8px 0", color: theme.color.ink }}>
             {narrative.debt_burden_paragraph}
+          </p>
+          <p style={{ margin: 0, color: theme.color.inkMuted, fontSize: "10.5px", fontStyle: "italic" }}>
+            Typical Debt and Debt-to-Income Label reflect institution-level data, not figures specific to the compared program.
           </p>
         </div>
 
@@ -107,11 +110,6 @@ export default function CareerOutcomes({
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
               >
                 Debt-to-Income Label
-              </th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
-                20-Yr ROI
               </th>
             </tr>
           </thead>
@@ -177,16 +175,6 @@ export default function CareerOutcomes({
                   }}
                 >
                   {s.debt_ratio_text ?? "Not published"}
-                </td>
-                <td
-                  style={{
-                    padding: "8px",
-                    textAlign: "right",
-                    color: theme.color.ink,
-                    fontWeight: 700,
-                  }}
-                >
-                  {s.roi_ratio ?? "Not published"}
                 </td>
               </tr>
             ))}

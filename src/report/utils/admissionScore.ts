@@ -1,6 +1,10 @@
 /**
- * Determines the admission fit category ("Safety", "Match", "Reach") and fit score (0-100)
+ * Determines the admission fit category ("Target/Match", "Reach") and fit score (0-100)
  * based on the student's academic profile and the college's admission statistics.
+ *
+ * This is an Admission Fit Estimate, not a probability of admission — there is
+ * intentionally no "Safety" tier, since that word implies a likelihood of
+ * acceptance this score does not measure.
  */
 export interface StudentAcademics {
   gpa: number | null;
@@ -19,7 +23,7 @@ export interface CollegeAdmissions {
 }
 
 export interface FitResult {
-  category: "Safety" | "Match" | "Reach" | "Unavailable";
+  category: "Target/Match" | "Reach" | "Unavailable";
   score: number;
   explanation: string;
 }
@@ -114,15 +118,12 @@ export function calculateAdmissionFit(
 
   score = Math.max(5, Math.min(99, Math.round(score)));
 
-  let category: "Safety" | "Match" | "Reach";
+  let category: "Target/Match" | "Reach";
   let explanation = "";
 
-  if (score >= 75) {
-    category = "Safety";
-    explanation = "Your academic profile is well above this institution's average threshold, indicating a very high probability of admission.";
-  } else if (score >= 45) {
-    category = "Match";
-    explanation = "Your scores align well with the middle 50% range of admitted students. This is a solid target choice.";
+  if (score >= 45) {
+    category = "Target/Match";
+    explanation = "Your scores align with or exceed the middle 50% range of admitted students. This is an Admission Fit Estimate, not a probability of admission.";
   } else {
     category = "Reach";
     explanation = college.admissionRate !== null && college.admissionRate < 0.12
