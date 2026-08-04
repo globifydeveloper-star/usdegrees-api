@@ -31,6 +31,7 @@ import {
   DegreeLevelRawRow,
   ApiError,
 } from "../types/programs";
+import { errorDetails } from "../utils/errors";
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -299,7 +300,7 @@ router.get(
       console.error("Get programs by credential level error:", error);
       return res.status(500).json({
         error: "Failed to fetch programs",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -369,7 +370,7 @@ router.get(
       console.error("Get schools by program error:", error);
       return res.status(500).json({
         error: "Failed to fetch schools",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },

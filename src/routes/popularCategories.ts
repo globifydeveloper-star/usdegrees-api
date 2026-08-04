@@ -20,6 +20,7 @@
 import { Router, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import pool from "../db/client";
+import { JWT_SECRET } from "../config/jwt";
 import { getSlotAllocation, DEFAULT_CATEGORY_SLOTS } from "../constants/homepageCategorySlots";
 import {
   CATEGORY_POPULARITY_QUERY,
@@ -38,6 +39,7 @@ import {
   CategorySource,
 } from "../services/personalizedCategories.service";
 import { SimpleCache } from "../utils/simpleCache";
+import { errorDetails } from "../utils/errors";
 
 const router = Router();
 
@@ -76,7 +78,7 @@ async function fetchDefaultCategories(
   return categories;
 }
 
-const SECRET = process.env.JWT_SECRET || "your_secret_key";
+const SECRET = JWT_SECRET;
 
 /**
  * Best-effort auth resolution: unlike verifyToken, an absent/invalid token
@@ -186,7 +188,7 @@ router.get(
       console.error("Error fetching popular categories:", error);
       return res.status(500).json({
         error: "Failed to fetch popular categories",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -269,7 +271,7 @@ router.get(
       console.error("Error fetching personalized popular categories:", error);
       return res.status(500).json({
         error: "Failed to fetch personalized popular categories",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },

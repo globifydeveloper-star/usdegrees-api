@@ -6,6 +6,7 @@ import { getAthleticsProfile } from "../services/athletics.service";
 import { AthleticsProfile } from "../types/athletics";
 import { EarningsAvgSalaryResolved } from "../types/earnings";
 import { getEarningsForProgram } from "../services/earnings.service";
+import { errorDetails } from "../utils/errors";
 
 const router = Router();
 
@@ -96,7 +97,7 @@ router.get(
       console.error("Error fetching compare colleges:", error);
       res.status(500).json({
         error: "Failed to fetch colleges",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -599,7 +600,7 @@ router.post(
       console.error("Add compare selection error:", error);
       return res.status(500).json({
         error: "Failed to add to comparison",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -627,7 +628,7 @@ router.get(
       console.error("Get compare selection error:", error);
       return res.status(500).json({
         error: "Failed to fetch comparison",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -668,7 +669,7 @@ router.delete(
       console.error("Remove compare selection error:", error);
       return res.status(500).json({
         error: "Failed to remove from comparison",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -736,7 +737,7 @@ router.get(
       console.error("Get compare matrix error:", error);
       return res.status(500).json({
         error: "Failed to fetch compare matrix",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -826,7 +827,7 @@ router.put(
       console.error("Replace compare matrix error:", error);
       return res.status(500).json({
         error: "Failed to replace compare matrix",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -933,7 +934,7 @@ router.post(
       console.error("Upsert compare matrix entry error:", error);
       return res.status(500).json({
         error: "Failed to upsert compare matrix entry",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -969,7 +970,7 @@ router.delete(
       console.error("Remove compare matrix entries error:", error);
       return res.status(500).json({
         error: "Failed to remove compare matrix entries",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -1010,7 +1011,7 @@ router.delete(
       console.error("Remove compare matrix entry error:", error);
       return res.status(500).json({
         error: "Failed to remove compare matrix entry",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -1312,7 +1313,7 @@ router.get(
       console.error("Get compare matrix details error:", error);
       return res.status(500).json({
         error: "Failed to fetch compare matrix details",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -1376,7 +1377,7 @@ router.get(
       console.error("Error fetching compare athletics:", error);
       res.status(500).json({
         error: "Failed to fetch athletics comparison",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },

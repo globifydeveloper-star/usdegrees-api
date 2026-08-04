@@ -15,6 +15,7 @@ import { Router, Response } from "express";
 import pool from "../db/client";
 import { verifyToken } from "../middleware/auth";
 import { AuthRequest, ApiError } from "../types/user";
+import { errorDetails } from "../utils/errors";
 
 const router = Router();
 
@@ -100,7 +101,7 @@ router.post("/", verifyToken, async (req: AuthRequest, res: Response) => {
     console.error("Save college error:", error);
     return res.status(500).json({
       error: "Failed to save college",
-      details: error instanceof Error ? error.message : "Unknown error",
+      details: errorDetails(error),
     });
   }
 });
@@ -156,7 +157,7 @@ router.get("/", verifyToken, async (req: AuthRequest, res: Response) => {
     console.error("Get saved colleges error:", error);
     return res.status(500).json({
       error: "Failed to fetch saved colleges",
-      details: error instanceof Error ? error.message : "Unknown error",
+      details: errorDetails(error),
     });
   }
 });
@@ -192,7 +193,7 @@ router.delete(
       console.error("Delete saved college error:", error);
       return res.status(500).json({
         error: "Failed to delete saved college",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },

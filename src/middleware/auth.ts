@@ -2,8 +2,7 @@ import { Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import pool from "../db/client";
 import { AuthRequest } from "../types/user";
-
-const SECRET = process.env.JWT_SECRET || "your_secret_key";
+import { JWT_SECRET as SECRET } from "../config/jwt";
 
 interface AppJwtPayload {
   sub: string; // Firebase UID

@@ -5,6 +5,7 @@ import { verifyToken } from "../middleware/auth";
 import { normalizeDegreeLevel } from "../constants/degreeLevels";
 import { getValidStateCodes } from "../db/statesCache";
 import { ApiError, AuthRequest } from "../types/user";
+import { errorDetails } from "../utils/errors";
 
 const router = Router();
 const accountRouter = Router();
@@ -138,7 +139,7 @@ router.get("/", verifyToken, async (req: AuthRequest, res: Response) => {
     console.error("Get profile error:", error);
     res.status(500).json({
       error: "Failed to fetch profile",
-      details: error instanceof Error ? error.message : "Unknown error",
+      details: errorDetails(error),
     });
   }
 });
@@ -290,7 +291,7 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
     console.error("Update profile error:", error);
     res.status(500).json({
       error: "Failed to update profile",
-      details: error instanceof Error ? error.message : "Unknown error",
+      details: errorDetails(error),
     });
   }
 });
@@ -372,7 +373,7 @@ accountRouter.post(
       console.error("Account delete error:", error);
       res.status(500).json({
         error: "Failed to delete account",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -432,7 +433,7 @@ accountRouter.get(
       console.error("Account availability error:", error);
       res.status(500).json({
         error: "Failed to check account availability",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },

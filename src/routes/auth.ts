@@ -7,8 +7,11 @@ import pool from "../db/client";
 import { verifyToken } from "../middleware/auth";
 import { User, UserProfile, ApiError, AuthRequest } from "../types/user";
 
+import { JWT_SECRET as SECRET } from "../config/jwt";
+import { authRateLimit } from "../middleware/rateLimit";
+import { errorDetails } from "../utils/errors";
+
 const router = Router();
-const SECRET = process.env.JWT_SECRET || "your_secret_key";
 const APP_JWT_TTL = process.env.APP_JWT_TTL || "30m";
 
 const APPLE_ISSUER = "https://appleid.apple.com";
@@ -62,6 +65,7 @@ function toProfile(user: User): UserProfile {
  */
 router.post(
   "/login",
+  authRateLimit,
   async (
     req: Request<{}, { token: string } | ApiError, { idToken?: string }>,
     res: Response<{ token: string } | ApiError>,
@@ -220,7 +224,7 @@ router.post(
       console.error("[auth/login] 500 — unexpected error:", error);
       return res.status(500).json({
         error: "Login failed",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -239,6 +243,7 @@ router.post(
  */
 router.post(
   "/apple",
+  authRateLimit,
   async (
     req: Request<
       {},
@@ -358,7 +363,7 @@ router.post(
       console.error("[auth/apple] 500 — unexpected error:", error);
       return res.status(500).json({
         error: "Apple sign-in failed",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -388,7 +393,7 @@ router.get(
       console.error("Fetch me error:", error);
       res.status(500).json({
         error: "Failed to retrieve user profile",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },

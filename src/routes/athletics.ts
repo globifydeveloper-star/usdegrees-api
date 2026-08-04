@@ -10,6 +10,7 @@
 import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { ApiError } from "../types/athletics";
+import { errorDetails } from "../utils/errors";
 
 const router = Router();
 
@@ -76,7 +77,7 @@ router.get(
       console.error("Error fetching division benchmarks:", error);
       res.status(500).json({
         error: "Failed to fetch division benchmarks",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },

@@ -26,6 +26,7 @@ import pool from "../db/client";
 import { College, CollegesResponse, ApiError } from "../types/colleges";
 import { getAthleticsProfile } from "../services/athletics.service";
 import { AthleticsProfile } from "../types/athletics";
+import { errorDetails } from "../utils/errors";
 
 const router = Router();
 
@@ -139,7 +140,7 @@ router.get(
       console.error("Error fetching colleges:", error);
       res.status(500).json({
         error: "Failed to fetch colleges",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -217,7 +218,7 @@ router.get(
       console.error("Error searching colleges:", error);
       res.status(500).json({
         error: "Failed to search colleges",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -281,7 +282,7 @@ router.get(
       console.error("Error fetching college:", error);
       res.status(500).json({
         error: "Failed to fetch college",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -324,7 +325,7 @@ router.get(
       console.error("Error fetching athletics profile:", error);
       res.status(500).json({
         error: "Failed to fetch athletics profile",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },

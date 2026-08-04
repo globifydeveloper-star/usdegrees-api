@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
+import { JWT_SECRET } from "../config/jwt";
 
-const SECRET = process.env.REPORT_DOWNLOAD_SECRET || process.env.JWT_SECRET || "your_secret_key";
+const SECRET = process.env.REPORT_DOWNLOAD_SECRET || JWT_SECRET;
 const EXPIRES_IN_MINUTES = 12; // within the required 10-15 min window
 
 interface ReportDownloadTokenPayload {

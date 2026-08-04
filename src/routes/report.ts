@@ -17,8 +17,10 @@ import {
   verifyReportDownloadToken,
 } from "../utils/reportDownloadToken";
 import { verifyToken } from "../middleware/auth";
+import { reportGenerationRateLimit } from "../middleware/rateLimit";
 import { AuthRequest } from "../types/user";
 import pool from "../db/client";
+import { errorDetails } from "../utils/errors";
 
 const router = Router();
 
@@ -58,15 +60,14 @@ async function resolveUserId(firebaseUid: string): Promise<number | null> {
   return r.rows.length ? r.rows[0].id : null;
 }
 
-// TODO(follow-up): no rate-limiting middleware exists anywhere in this codebase
-// yet (src/middleware only has auth.ts). Report generation triggers an LLM call
-// and a headless-Chrome PDF render per request, so this endpoint should be
-// rate-limited per user before it's exposed broadly. Flagging rather than
-// silently skipping — needs a decision on a shared rate-limit middleware
-// (e.g. express-rate-limit) since none is currently installed.
+// Report generation triggers a real Gemini API call and a headless-Chrome PDF
+// render per request — rate-limited per authenticated user (see
+// middleware/rateLimit.ts) so a single account can't loop this endpoint to
+// run up unlimited Gemini/compute cost.
 router.post(
   "/generate",
   verifyToken,
+  reportGenerationRateLimit,
   async (req: AuthRequest, res: Response<{ reportId: string } | ApiError>) => {
     try {
       const { selectedColleges, programId } = req.body as GenerateReportRequest;
@@ -209,7 +210,7 @@ router.post(
       console.error("Error generating college decision report:", error);
       return res.status(500).json({
         error: "Failed to generate report",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -263,7 +264,7 @@ router.get(
       console.error("Error listing reports:", error);
       return res.status(500).json({
         error: "Failed to list reports",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -322,7 +323,7 @@ router.get(
       console.error("Error fetching report:", error);
       return res.status(500).json({
         error: "Failed to fetch report",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
@@ -383,7 +384,7 @@ router.get(
       console.error("Error downloading report:", error);
       return res.status(500).json({
         error: "Failed to download report",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorDetails(error),
       });
     }
   },
