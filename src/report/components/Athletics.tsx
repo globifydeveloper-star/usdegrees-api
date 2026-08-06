@@ -19,6 +19,20 @@ function num(v: number | null): string {
   return v != null ? v.toLocaleString() : "Not published";
 }
 
+function formatSportsLineFromRoster(roster: { sport: string }[], maxItems = 6) {
+  if (!roster || roster.length === 0) return "Not published";
+  const names = roster.map((r) => r.sport);
+  if (names.length <= maxItems) return names.join(", ");
+  return names.slice(0, maxItems).join(", ") + ", and so on";
+}
+
+function truncateWithEllipsis(s: string | number | null | undefined, max = 100) {
+  if (s == null) return "Not published";
+  const text = typeof s === "number" ? s.toLocaleString() : s;
+  if (text.length <= max) return text;
+  return text.slice(0, max).trimEnd() + ", and so on";
+}
+
 /**
  * One card per unique college (payload.college_details is already deduped by
  * unitid) — athletics data is school-level (EADA reporting), so it doesn't
@@ -32,6 +46,8 @@ export default function Athletics({
   totalPages,
 }: AthleticsProps) {
   const { college_details } = payload;
+  const athleticsCount = college_details.filter((c) => c.athletics).length;
+  const compact = athleticsCount === 5;
 
   return (
     <div style={pageStyle}>
@@ -43,10 +59,10 @@ export default function Athletics({
 
         <p
           style={{
-            fontSize: "11.5px",
-            lineHeight: "1.6",
+            fontSize: compact ? "10.5px" : "11.5px",
+            lineHeight: "1.5",
             color: theme.color.ink,
-            margin: "0 0 20px 0",
+            margin: compact ? "0 0 12px 0" : "0 0 20px 0",
           }}
         >
           Sourced from EADA (Equity in Athletics Data Analysis) filings, the
@@ -55,7 +71,7 @@ export default function Athletics({
           comparisons elsewhere in this report.
         </p>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: compact ? "8px" : "14px" }}>
           {college_details.map((c) => {
             const a = c.athletics;
             if (!a) {
@@ -93,7 +109,7 @@ export default function Athletics({
                 style={{
                   border: `1px solid ${theme.color.hairline}`,
                   borderRadius: "12px",
-                  padding: "16px",
+                  padding: compact ? "10px" : "16px",
                   backgroundColor: theme.color.panelBg,
                 }}
               >
@@ -102,7 +118,7 @@ export default function Athletics({
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "flex-start",
-                    marginBottom: "10px",
+                    marginBottom: compact ? "6px" : "10px",
                   }}
                 >
                   <div>
@@ -110,14 +126,14 @@ export default function Athletics({
                       style={{
                         fontWeight: 700,
                         color: theme.color.navy,
-                        fontSize: "13px",
+                        fontSize: compact ? "12px" : "13px",
                       }}
                     >
                       {c.name}
                     </div>
                     <div
                       style={{
-                        fontSize: "10.5px",
+                        fontSize: compact ? "9.5px" : "10.5px",
                         color: theme.color.inkMuted,
                       }}
                     >
@@ -142,33 +158,37 @@ export default function Athletics({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(4, 1fr)",
-                    gap: "10px",
-                    fontSize: "10.5px",
-                    marginBottom: "10px",
+                    gridTemplateColumns: compact ? "repeat(3, 1fr)" : "repeat(4, 1fr)",
+                    gap: compact ? "6px" : "10px",
+                    fontSize: compact ? "9.5px" : "10.5px",
+                    marginBottom: compact ? "6px" : "10px",
                   }}
                 >
+                  {!compact && (
+                    <div>
+                      <div
+                        style={{
+                          color: theme.color.inkMuted,
+                          textTransform: "uppercase",
+                          fontSize: compact ? "8px" : "9px",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Sports Offered
+                      </div>
+                        <div style={{ color: theme.color.ink, fontWeight: 700 }}>
+                          {a.hasRosterData
+                            ? formatSportsLineFromRoster(a.roster)
+                            : truncateWithEllipsis(a.sportsOffered, 100)}
+                        </div>
+                    </div>
+                  )}
                   <div>
                     <div
                       style={{
                         color: theme.color.inkMuted,
                         textTransform: "uppercase",
-                        fontSize: "9px",
-                        fontWeight: 700,
-                      }}
-                    >
-                      Sports Offered
-                    </div>
-                    <div style={{ color: theme.color.ink, fontWeight: 700 }}>
-                      {a.sportsOffered}
-                    </div>
-                  </div>
-                  <div>
-                    <div
-                      style={{
-                        color: theme.color.inkMuted,
-                        textTransform: "uppercase",
-                        fontSize: "9px",
+                        fontSize: compact ? "8px" : "9px",
                         fontWeight: 700,
                       }}
                     >
@@ -184,7 +204,7 @@ export default function Athletics({
                       style={{
                         color: theme.color.inkMuted,
                         textTransform: "uppercase",
-                        fontSize: "9px",
+                        fontSize: compact ? "8px" : "9px",
                         fontWeight: 700,
                       }}
                     >
@@ -199,7 +219,7 @@ export default function Athletics({
                       style={{
                         color: theme.color.inkMuted,
                         textTransform: "uppercase",
-                        fontSize: "9px",
+                        fontSize: compact ? "8px" : "9px",
                         fontWeight: 700,
                       }}
                     >
@@ -211,10 +231,10 @@ export default function Athletics({
                   </div>
                 </div>
 
-                {a.hasRosterData && (
+                {!compact && a.hasRosterData && (
                   <div
                     style={{
-                      marginBottom: "10px",
+                      marginBottom: compact ? "6px" : "10px",
                       paddingTop: "8px",
                       borderTop: `1px solid ${theme.color.hairline}`,
                     }}
@@ -223,36 +243,15 @@ export default function Athletics({
                       style={{
                         color: theme.color.inkMuted,
                         textTransform: "uppercase",
-                        fontSize: "9px",
+                        fontSize: compact ? "8px" : "9px",
                         fontWeight: 700,
                         marginBottom: "6px",
                       }}
                     >
                       Sports Offered
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: "6px",
-                      }}
-                    >
-                      {a.roster.map((r) => (
-                        <span
-                          key={r.sport}
-                          style={{
-                            fontSize: "9.5px",
-                            fontWeight: 600,
-                            color: theme.color.navy,
-                            backgroundColor: theme.color.panelBgAlt,
-                            border: `1px solid ${theme.color.hairline}`,
-                            borderRadius: "20px",
-                            padding: "3px 9px",
-                          }}
-                        >
-                          {r.sport}
-                        </span>
-                      ))}
+                    <div style={{ color: theme.color.navy, fontWeight: 700, fontSize: "9.5px" }}>
+                      {formatSportsLineFromRoster(a.roster)}
                     </div>
                   </div>
                 )}
@@ -260,15 +259,13 @@ export default function Athletics({
                 {a.divisionBenchmark && (
                   <div
                     style={{
-                      fontSize: "9.5px",
+                      fontSize: compact ? "8.5px" : "9.5px",
                       color: theme.color.inkFaint,
                       borderTop: `1px solid ${theme.color.hairline}`,
                       paddingTop: "8px",
                     }}
                   >
-                    {a.divisionBenchmark.division} division average:{" "}
-                    {num(a.divisionBenchmark.avgAthletesTotal)} athletes,{" "}
-                    {money(a.divisionBenchmark.avgAidPerAthlete)} aid/athlete
+                    {a.divisionBenchmark.division} division average: {num(a.divisionBenchmark.avgAthletesTotal)} athletes, {money(a.divisionBenchmark.avgAidPerAthlete)} aid/athlete
                   </div>
                 )}
               </div>
