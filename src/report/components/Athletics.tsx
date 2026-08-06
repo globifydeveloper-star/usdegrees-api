@@ -26,6 +26,22 @@ function formatSportsLineFromRoster(roster: { sport: string }[], maxItems = 6) {
   return names.slice(0, maxItems).join(", ") + ", and so on";
 }
 
+function getSportsCount(
+  roster: { sport: string }[] | undefined,
+  sportsOffered: string | number | null | undefined,
+) {
+  if (roster && roster.length > 0) return roster.length;
+
+  if (typeof sportsOffered === "string") {
+    const trimmed = sportsOffered.trim();
+    if (!trimmed) return null;
+    const parts = trimmed.split(/[,/]/).map((part) => part.trim()).filter(Boolean);
+    return parts.length > 0 ? parts.length : null;
+  }
+
+  return null;
+}
+
 function truncateWithEllipsis(s: string | number | null | undefined, max = 100) {
   if (s == null) return "Not published";
   const text = typeof s === "number" ? s.toLocaleString() : s;
@@ -74,6 +90,12 @@ export default function Athletics({
         <div style={{ display: "flex", flexDirection: "column", gap: compact ? "8px" : "14px" }}>
           {college_details.map((c) => {
             const a = c.athletics;
+            const sportsCount = getSportsCount(a?.roster, a?.sportsOffered);
+            const sportsList = a?.hasRosterData
+              ? formatSportsLineFromRoster(a.roster, 6)
+              : truncateWithEllipsis(a?.sportsOffered, 80);
+            const showSportsList = !compact && (a?.hasRosterData || a?.sportsOffered != null);
+
             if (!a) {
               return (
                 <div
@@ -158,31 +180,29 @@ export default function Athletics({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: compact ? "repeat(3, 1fr)" : "repeat(4, 1fr)",
+                    gridTemplateColumns: compact ? "repeat(3, minmax(0, 1fr))" : "repeat(4, minmax(0, 1fr))",
                     gap: compact ? "6px" : "10px",
                     fontSize: compact ? "9.5px" : "10.5px",
                     marginBottom: compact ? "6px" : "10px",
                   }}
                 >
-                  {!compact && (
-                    <div>
-                      <div
-                        style={{
-                          color: theme.color.inkMuted,
-                          textTransform: "uppercase",
-                          fontSize: compact ? "8px" : "9px",
-                          fontWeight: 700,
-                        }}
-                      >
-                        Sports Offered
-                      </div>
-                        <div style={{ color: theme.color.ink, fontWeight: 700 }}>
-                          {a.hasRosterData
-                            ? formatSportsLineFromRoster(a.roster)
-                            : truncateWithEllipsis(a.sportsOffered, 100)}
-                        </div>
+                  <div>
+                    <div
+                      style={{
+                        color: theme.color.inkMuted,
+                        textTransform: "uppercase",
+                        fontSize: compact ? "8px" : "9px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Sports Offered
                     </div>
-                  )}
+                    <div style={{ color: theme.color.ink, fontWeight: 700 }}>
+                      {sportsCount != null
+                        ? `${sportsCount} ${sportsCount === 1 ? "sport" : "sports"}`
+                        : "Not published"}
+                    </div>
+                  </div>
                   <div>
                     <div
                       style={{
@@ -231,12 +251,16 @@ export default function Athletics({
                   </div>
                 </div>
 
-                {!compact && a.hasRosterData && (
+                {showSportsList && (
                   <div
                     style={{
-                      marginBottom: compact ? "6px" : "10px",
-                      paddingTop: "8px",
+                      marginBottom: compact ? "4px" : "6px",
+                      paddingTop: "5px",
                       borderTop: `1px solid ${theme.color.hairline}`,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      lineHeight: 1.2,
                     }}
                   >
                     <div
@@ -245,13 +269,23 @@ export default function Athletics({
                         textTransform: "uppercase",
                         fontSize: compact ? "8px" : "9px",
                         fontWeight: 700,
-                        marginBottom: "6px",
+                        flexShrink: 0,
                       }}
                     >
                       Sports Offered
                     </div>
-                    <div style={{ color: theme.color.navy, fontWeight: 700, fontSize: "9.5px" }}>
-                      {formatSportsLineFromRoster(a.roster)}
+                    <div
+                      style={{
+                        color: theme.color.navy,
+                        fontWeight: 700,
+                        fontSize: "9px",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        flex: 1,
+                      }}
+                    >
+                      {sportsList}
                     </div>
                   </div>
                 )}
