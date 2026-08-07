@@ -28,6 +28,12 @@ export default function TuitionCosts({
   totalPages,
 }: TuitionCostsProps) {
   const { college_details } = payload;
+  // One or two colleges leave most of the page empty at the default density,
+  // so the table is scaled up and given breathing room inside each cell.
+  // Three or more keep the compact sizing that lets eleven columns fit.
+  const roomy = college_details.length <= 2;
+  const cellPad = roomy ? "12px 10px" : "6px";
+  const tableFont = roomy ? "12.5px" : "10.5px";
 
   return (
     <div style={pageStyle}>
@@ -54,7 +60,7 @@ export default function TuitionCosts({
           style={{
             width: "100%",
             borderCollapse: "collapse",
-            fontSize: "10.5px",
+            fontSize: tableFont,
             marginBottom: "24px",
             border: `1px solid ${theme.color.hairline}`,
           }}
@@ -67,35 +73,35 @@ export default function TuitionCosts({
                 textAlign: "left",
               }}
             >
-              <th style={{ padding: "6px", fontWeight: 600 }}>College</th>
-              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+              <th style={{ padding: cellPad, fontWeight: 600 }}>College</th>
+              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
                 Net Price (Avg)
               </th>
-              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
                 Sticker Price
               </th>
-              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
                 Tuition (In-State)
               </th>
-              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
                 Tuition (Out-of-State)
               </th>
-              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
                 Room & Board (On-Campus)
               </th>
-              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
                 Room & Board (Off-Campus)
               </th>
-              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
                 Books & Supplies
               </th>
-              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
                 Other Expense (On-Campus)
               </th>
-              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
                 Other Expense (Off-Campus)
               </th>
-              <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
+              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
                 Other Expense (With Family)
               </th>
             </tr>
@@ -112,7 +118,7 @@ export default function TuitionCosts({
               >
                 <td
                   style={{
-                    padding: "6px",
+                    padding: cellPad,
                     fontWeight: 700,
                     color: theme.color.navy,
                   }}
@@ -121,7 +127,7 @@ export default function TuitionCosts({
                 </td>
                 <td
                   style={{
-                    padding: "6px",
+                    padding: cellPad,
                     textAlign: "right",
                     color: theme.color.navy,
                     fontWeight: 700,
@@ -129,31 +135,31 @@ export default function TuitionCosts({
                 >
                   {money(c.tuition.sticker_price)}
                 </td>
-                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.net_price)}
                 </td>
-                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.tuition_in_state)}
                 </td>
-                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.tuition_out_state)}
                 </td>
-                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.room_board_on_campus)}
                 </td>
-                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.room_board_off_campus)}
                 </td>
-                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.books_supply)}
                 </td>
-                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.other_expense_on_campus)}
                 </td>
-                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.other_expense_off_campus)}
                 </td>
-                <td style={{ padding: "6px", textAlign: "right", color: theme.color.ink }}>
+                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.other_expense_with_family)}
                 </td>
               </tr>

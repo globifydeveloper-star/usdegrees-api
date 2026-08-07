@@ -241,7 +241,7 @@ async function fetchDebt(unitid: number) {
 
 async function fetchStudent(userId: number) {
   const { rows } = await pool.query(
-    `SELECT display_name, address, gpa, sat_score, sat_math, sat_reading_writing, act_score,
+    `SELECT display_name, email, address, gpa, sat_score, sat_math, sat_reading_writing, act_score,
             graduation_year, high_school_name, preferred_degree_level, preferred_college_type
        FROM usdusers WHERE id = $1 LIMIT 1`,
     [userId],
@@ -610,6 +610,7 @@ export async function buildC1LitePayload(args: {
     },
     student: {
       display_name: student.display_name,
+      email: student.email ?? null,
       address: student.address ?? null,
       gpa: student.gpa,
       sat_score: student.sat_score,

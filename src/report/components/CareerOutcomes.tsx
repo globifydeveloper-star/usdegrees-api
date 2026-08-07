@@ -7,13 +7,15 @@ import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
  * debt_income_ratio is derived in reportPayload.service (typical debt ÷
  * program earnings) rather than read from the reported federal column, so
  * this cell always reconciles with the two columns beside it. It is rendered
- * exactly as the payload carries it — the narrative cites the same value, and
- * gateNumbersTraceable requires a character-for-character match.
+ * as a debt : income ratio rather than a bare decimal — the payload number is
+ * the debt side against an income of 1, so 0.52 prints as "0.52 : 1". The
+ * numeral itself is unchanged from the payload, which gateNumbersTraceable
+ * requires of the narrative citing the same value.
  */
 const MISSING_RATIO = "Cannot be calculated due to missing values";
 
 function debtToIncome(ratio: number | null): string {
-  return ratio != null ? String(ratio) : MISSING_RATIO;
+  return ratio != null ? `${ratio} : 1` : MISSING_RATIO;
 }
 
 export interface CareerOutcomesProps {

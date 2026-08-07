@@ -108,18 +108,6 @@ export default function StudentProfile({
               padding: "18px",
             }}
           >
-            <h3
-              style={{
-                fontSize: "12px",
-                fontWeight: 700,
-                color: theme.color.inkMuted,
-                margin: "0 0 12px 0",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              Net Price Basis
-            </h3>
             <div
               style={{
                 display: "flex",
@@ -130,19 +118,22 @@ export default function StudentProfile({
             >
               <div>
                 <span style={{ color: theme.color.inkMuted }}>
-                  Income bracket:{" "}
-                </span>
-                <strong style={{ color: theme.color.ink }}>
-                  {student.income_bracket_label ??
-                    "Not personalized — posted figure shown"}
-                </strong>
-              </div>
-              <div>
-                <span style={{ color: theme.color.inkMuted }}>
                   High school:{" "}
                 </span>
                 <strong style={{ color: theme.color.ink }}>
                   {student.high_school_name ?? "Not provided"}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: theme.color.inkMuted }}>Email: </span>
+                <strong style={{ color: theme.color.ink, wordBreak: "break-all" }}>
+                  {student.email ?? "Not provided"}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: theme.color.inkMuted }}>Address: </span>
+                <strong style={{ color: theme.color.ink }}>
+                  {student.address ?? "Not provided"}
                 </strong>
               </div>
             </div>

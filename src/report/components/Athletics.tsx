@@ -18,10 +18,18 @@ function num(v: number | null): string {
   return v != null ? v.toLocaleString() : "Not published";
 }
 
-function formatSportsLineFromRoster(roster: { sport: string }[], maxItems = 6) {
+/**
+ * maxItems of null means no cap — used when three or fewer institutions share
+ * the page and there is room to print every sport rather than trailing off
+ * with "and so on".
+ */
+function formatSportsLineFromRoster(
+  roster: { sport: string }[],
+  maxItems: number | null = 6,
+) {
   if (!roster || roster.length === 0) return "Not published";
   const names = roster.map((r) => r.sport);
-  if (names.length <= maxItems) return names.join(", ");
+  if (maxItems == null || names.length <= maxItems) return names.join(", ");
   return names.slice(0, maxItems).join(", ") + ", and so on";
 }
 
@@ -41,10 +49,14 @@ function getSportsCount(
   return null;
 }
 
-function truncateWithEllipsis(s: string | number | null | undefined, max = 100) {
+/** max of null means print the whole string — see formatSportsLineFromRoster. */
+function truncateWithEllipsis(
+  s: string | number | null | undefined,
+  max: number | null = 100,
+) {
   if (s == null) return "Not published";
   const text = typeof s === "number" ? s.toLocaleString() : s;
-  if (text.length <= max) return text;
+  if (max == null || text.length <= max) return text;
   return text.slice(0, max).trimEnd() + ", and so on";
 }
 
@@ -63,6 +75,9 @@ export default function Athletics({
   const { college_details } = payload;
   const athleticsCount = college_details.filter((c) => c.athletics).length;
   const compact = athleticsCount === 5;
+  // Three or fewer cards leave enough vertical room to list every sport in
+  // full; from four up the line is capped and trails off with "and so on".
+  const sportsCap = college_details.length <= 3 ? null : 6;
 
   return (
     <div style={pageStyle}>
@@ -91,8 +106,8 @@ export default function Athletics({
             const a = c.athletics;
             const sportsCount = getSportsCount(a?.roster, a?.sportsOffered);
             const sportsList = a?.hasRosterData
-              ? formatSportsLineFromRoster(a.roster, 6)
-              : truncateWithEllipsis(a?.sportsOffered, 80);
+              ? formatSportsLineFromRoster(a.roster, sportsCap)
+              : truncateWithEllipsis(a?.sportsOffered, sportsCap == null ? null : 80);
             const showSportsList = !compact && (a?.hasRosterData || a?.sportsOffered != null);
 
             if (!a) {
@@ -278,9 +293,15 @@ export default function Athletics({
                         color: theme.color.navy,
                         fontWeight: 700,
                         fontSize: "9px",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
+                        // An uncapped list has to be allowed to wrap — clipping
+                        // it to one line would reintroduce truncation via CSS.
+                        ...(sportsCap == null
+                          ? { lineHeight: 1.4 }
+                          : {
+                              whiteSpace: "nowrap" as const,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }),
                         flex: 1,
                       }}
                     >

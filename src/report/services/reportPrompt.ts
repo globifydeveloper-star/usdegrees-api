@@ -24,6 +24,7 @@ export interface C1LitePayload {
   };
   student: {
     display_name: string;
+    email: string | null;
     address: string | null;
     gpa: number | null;
     sat_score: number | null;
@@ -203,7 +204,8 @@ WRITE ONLY THESE (lengths are ceilings):
   method flag only. No "best". ≤90 words.
 - debt_burden_paragraph: state each school's avg_debt (typical debt at completion) and its
   debt_income_ratio, plus the debt range. debt_income_ratio is already calculated for you as
-  avg_debt divided by program_earnings — write the payload value exactly and describe it as
+  avg_debt divided by program_earnings — write the payload value exactly, in ratio form
+  against an income of 1 (payload 0.52 is written "0.52 : 1"), and describe it as
   "typical debt divided by program earnings". Never recompute it yourself, and never quote
   debt_ratio_text or any federal label. When debt_income_ratio is null, write that the ratio
   cannot be calculated due to missing values. Never describe a monthly payment or loan
@@ -359,7 +361,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
   // so the paragraph describes the calculation instead of quoting the
   // reported federal label.
   const debt_burden_paragraph = schools
-    .map((s) => `${s.display_name}: typical debt ${money(s.avg_debt)}, debt-to-income ratio ${s.debt_income_ratio != null ? `${s.debt_income_ratio} (typical debt divided by program earnings)` : "cannot be calculated due to missing values"}.`)
+    .map((s) => `${s.display_name}: typical debt ${money(s.avg_debt)}, debt-to-income ratio ${s.debt_income_ratio != null ? `${s.debt_income_ratio} : 1 (typical debt divided by program earnings)` : "cannot be calculated due to missing values"}.`)
     .join(" ") + (derived_flags.debt_range_low && derived_flags.debt_range_high
       ? ` Range across selected schools: ${money(Number(derived_flags.debt_range_low))} to ${money(Number(derived_flags.debt_range_high))}.`
       : "");
