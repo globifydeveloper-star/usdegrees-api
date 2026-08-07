@@ -556,7 +556,15 @@ export async function buildC1LitePayload(args: {
       sticker_price: costs.sticker,
       sticker_vintage: costs.sticker != null ? NET_PRICE_VINTAGE : null,
       avg_debt: debt.avg_debt,
-      debt_income_ratio: debt.ratio,
+      // Derived from the two figures the report itself shows (typical debt ÷
+      // program earnings) rather than the debt_income_ratio column, so the
+      // ratio always reconciles with the numbers printed beside it. Null —
+      // or non-positive earnings, which makes the quotient meaningless —
+      // leaves it null and downstream renders "cannot be calculated".
+      debt_income_ratio:
+        debt.avg_debt != null && earn.earnings != null && earn.earnings > 0
+          ? Number((debt.avg_debt / earn.earnings).toFixed(2))
+          : null,
       debt_ratio_text: debt.ratio_text,
       debt_vintage: debt.avg_debt != null ? "College Scorecard" : null,
     });

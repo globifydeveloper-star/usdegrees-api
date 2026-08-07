@@ -2,6 +2,7 @@ import React from "react";
 import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
+import { formatUsd } from "./format";
 
 export interface PageProps {
   payload: C1LitePayload;
@@ -68,9 +69,9 @@ export default function ExecutiveSummary({
           Cost & Outcomes Range
         </h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-          <RangeTile label="Net Price Range" low={derived_flags.cost_range_low} high={derived_flags.cost_range_high} prefix="$" />
-          <RangeTile label="Program Earnings Range" low={derived_flags.earnings_range_low} high={derived_flags.earnings_range_high} prefix="$" />
-          <RangeTile label="Typical Debt Range" low={derived_flags.debt_range_low} high={derived_flags.debt_range_high} prefix="$" />
+          <RangeTile label="Net Price Range" low={derived_flags.cost_range_low} high={derived_flags.cost_range_high} />
+          <RangeTile label="Program Earnings Range" low={derived_flags.earnings_range_low} high={derived_flags.earnings_range_high} />
+          <RangeTile label="Typical Debt Range" low={derived_flags.debt_range_low} high={derived_flags.debt_range_high} />
         </div>
       </div>
 
@@ -84,13 +85,13 @@ export default function ExecutiveSummary({
   );
 }
 
-function RangeTile({ label, low, high, prefix }: { label: string; low: string; high: string; prefix: string }) {
+function RangeTile({ label, low, high }: { label: string; low: string; high: string }) {
   const hasData = low !== "" && high !== "";
   return (
     <div style={{ padding: "10px 14px", backgroundColor: theme.color.panelBg, border: `1px solid ${theme.color.hairline}`, borderRadius: "8px" }}>
       <div style={{ fontSize: "10px", color: theme.color.inkMuted, fontWeight: 700, textTransform: "uppercase" }}>{label}</div>
       <div style={{ fontSize: "12.5px", fontWeight: 700, color: theme.color.ink }}>
-        {hasData ? `${prefix}${Number(low).toLocaleString()} – ${prefix}${Number(high).toLocaleString()}` : "Not published"}
+        {hasData ? `${formatUsd(Number(low))} – ${formatUsd(Number(high))}` : "Not published"}
       </div>
     </div>
   );

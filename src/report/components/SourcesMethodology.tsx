@@ -80,7 +80,7 @@ export default function SourcesMethodology({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 08 · PRIMARY SOURCES"
+          sectionLabel="SECTION 09 · PRIMARY SOURCES"
           title="Primary Data Sources"
         />
 

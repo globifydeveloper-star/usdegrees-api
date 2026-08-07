@@ -3,6 +3,19 @@ import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 
+/**
+ * debt_income_ratio is derived in reportPayload.service (typical debt ÷
+ * program earnings) rather than read from the reported federal column, so
+ * this cell always reconciles with the two columns beside it. It is rendered
+ * exactly as the payload carries it — the narrative cites the same value, and
+ * gateNumbersTraceable requires a character-for-character match.
+ */
+const MISSING_RATIO = "Cannot be calculated due to missing values";
+
+function debtToIncome(ratio: number | null): string {
+  return ratio != null ? String(ratio) : MISSING_RATIO;
+}
+
 export interface CareerOutcomesProps {
   payload: C1LitePayload;
   narrative: C1LiteNarrative;
@@ -67,13 +80,8 @@ export default function CareerOutcomes({
           >
             Typical Debt at Completion
           </div>
-          {/* debt_ratio_text is a reported federal label, not this report's
-              verdict on a school — rendered plain, no warning styling. */}
-          <p style={{ margin: "0 0 8px 0", color: theme.color.ink }}>
+          <p style={{ margin: 0, color: theme.color.ink }}>
             {narrative.debt_burden_paragraph}
-          </p>
-          <p style={{ margin: 0, color: theme.color.inkMuted, fontSize: "10.5px", fontStyle: "italic" }}>
-            Typical Debt and Debt-to-Income Label reflect institution-level data, not figures specific to the compared program.
           </p>
         </div>
 
@@ -109,7 +117,7 @@ export default function CareerOutcomes({
               <th
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
               >
-                Debt-to-Income Label
+                Debt-to-Income Ratio
               </th>
             </tr>
           </thead>
@@ -166,34 +174,48 @@ export default function CareerOutcomes({
                     ? `$${s.avg_debt.toLocaleString()}`
                     : "Not published"}
                 </td>
-                <td
-                  style={{
-                    padding: "8px",
-                    textAlign: "right",
-                    color: theme.color.ink,
-                    fontWeight: 600,
-                  }}
-                >
-                  {s.debt_ratio_text ?? "Not published"}
-                </td>
+                {(() => {
+                  const ratio = debtToIncome(s.debt_income_ratio);
+                  const missing = ratio === MISSING_RATIO;
+                  return (
+                    <td
+                      style={{
+                        padding: "8px",
+                        textAlign: "right",
+                        // The fallback sentence is prose in a numeric column —
+                        // muted and smaller so it doesn't read as a figure.
+                        color: missing ? theme.color.inkMuted : theme.color.ink,
+                        fontWeight: missing ? 400 : 600,
+                        fontSize: missing ? "9px" : undefined,
+                        fontStyle: missing ? "italic" : undefined,
+                      }}
+                    >
+                      {ratio}
+                    </td>
+                  );
+                })()}
               </tr>
             ))}
           </tbody>
         </table>
 
-        {/* Vintage footnotes — every figure above traces to a payload vintage tag */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          {schools.map((s, i) => (
-            <div
-              key={i}
-              style={{ fontSize: "9px", color: theme.color.inkFaint }}
-            >
-              {s.display_name}: earnings {s.earnings_vintage ?? "n/a"}
-              {s.earnings_method_flag ? ` (${s.earnings_method_flag})` : ""},
-              debt {s.debt_vintage ?? "n/a"}
-            </div>
-          ))}
-        </div>
+        {/* Earnings method footnotes — vintage years are deliberately omitted;
+            only the method flag (e.g. user_reported) is surfaced. Schools with
+            no method flag contribute no line. */}
+
+            
+        {/* <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          {schools
+            .filter((s) => s.earnings_method_flag)
+            .map((s, i) => (
+              <div
+                key={i}
+                style={{ fontSize: "9px", color: theme.color.inkFaint }}
+              >
+                {s.display_name}: earnings ({s.earnings_method_flag})
+              </div>
+            ))}
+        </div> */}
       </div>
 
       <PageFooter

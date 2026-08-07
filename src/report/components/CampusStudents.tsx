@@ -42,7 +42,7 @@ export default function CampusStudents({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 05 · CAMPUS & STUDENTS"
+          sectionLabel="SECTION 06 · CAMPUS & STUDENTS"
           title="Campus & Student Body"
         />
 
@@ -64,7 +64,7 @@ export default function CampusStudents({
             width: "100%",
             borderCollapse: "collapse",
             fontSize: "10.5px",
-            marginBottom: "24px",
+            marginBottom: "10px",
             border: `1px solid ${theme.color.hairline}`,
           }}
         >
@@ -174,6 +174,20 @@ export default function CampusStudents({
             ))}
           </tbody>
         </table>
+
+        <p
+          style={{
+            fontSize: "10px",
+            lineHeight: "1.6",
+            color: theme.color.inkMuted,
+            margin: "0 0 24px 0",
+          }}
+        >
+          Undergraduate and graduate enrollment figures reflect the unduplicated
+          count of students enrolled at any point during the most recent
+          12-month reporting period (not a single-day snapshot), as reported by
+          the institution to IPEDS.
+        </p>
 
         <h3
           style={{

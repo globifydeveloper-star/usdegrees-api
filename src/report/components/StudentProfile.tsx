@@ -199,7 +199,7 @@ export default function StudentProfile({
               <th
                 style={{ padding: "10px", fontWeight: 600, textAlign: "right" }}
               >
-                Sticker Price
+                Net Price
               </th>
               <th
                 style={{ padding: "10px", fontWeight: 600, textAlign: "right" }}

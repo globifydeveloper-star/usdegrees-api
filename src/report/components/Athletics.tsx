@@ -2,6 +2,7 @@ import React from "react";
 import type { C1LitePayload } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
+import { formatUsd } from "./format";
 
 export interface AthleticsProps {
   payload: C1LitePayload;
@@ -11,9 +12,7 @@ export interface AthleticsProps {
   totalPages: number;
 }
 
-function money(v: number | null): string {
-  return v != null ? `$${v.toLocaleString()}` : "Not published";
-}
+const money = formatUsd;
 
 function num(v: number | null): string {
   return v != null ? v.toLocaleString() : "Not published";
@@ -69,7 +68,7 @@ export default function Athletics({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 06 · ATHLETICS"
+          sectionLabel="SECTION 07 · ATHLETICS"
           title="Athletics Program Overview"
         />
 

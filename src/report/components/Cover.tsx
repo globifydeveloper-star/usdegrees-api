@@ -153,7 +153,7 @@ export default function Cover({
               marginBottom: "12px",
             }}
           >
-            Institutions Evaluated
+            Programs Evaluated
           </div>
           <div
             style={{ display: "flex", flexDirection: "column", gap: "10px" }}
@@ -250,7 +250,7 @@ export default function Cover({
             </div>
             <div>{generatedDate}</div>
             <div style={{ color: theme.color.gold, fontWeight: 600 }}>
-              System Verified
+              Schema Validated
             </div>
           </div>
         </div>

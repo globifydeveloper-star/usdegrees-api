@@ -33,7 +33,7 @@ export default function TuitionCosts({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 07 · TUITION & COSTS"
+          sectionLabel="SECTION 08 · TUITION & COSTS"
           title="Tuition & Cost of Attendance"
         />
 
@@ -69,10 +69,10 @@ export default function TuitionCosts({
             >
               <th style={{ padding: "6px", fontWeight: 600 }}>College</th>
               <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
-                Sticker Price
+                Net Price (Avg)
               </th>
               <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
-                Net Price
+                Sticker Price
               </th>
               <th style={{ padding: "6px", fontWeight: 600, textAlign: "right" }}>
                 Tuition (In-State)
@@ -169,8 +169,7 @@ export default function TuitionCosts({
             margin: 0,
           }}
         >
-          Sticker Price is the estimated average price after student aid. Net
-          Price is the figure on file before estimated financial-aid
+          Net Price is the estimated average price after student aid. Sticker Price is the figure on file before estimated financial-aid
           calculations.
         </p>
       </div>

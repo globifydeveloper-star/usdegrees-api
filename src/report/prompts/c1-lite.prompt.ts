@@ -159,7 +159,9 @@ GENERATED-NARRATIVE RULES:
 6. plain_english_question — one framing paragraph: with cost and outcomes on the table,
    the question is which cost-and-value structure the family can carry. ≤ 90 words.
 7. executive_summary & analyst_note — 2–4 neutral sentences each, summarizing only facts
-   already present in the payload. No new numbers beyond payload fields.
+   already present in the payload. No new numbers beyond payload fields. Each entry in
+   schools is a compared program, not a distinct institution — when stating the count,
+   say "compares N programs", never "N institutions".
 
 OUTPUT FORMAT — return EXACTLY this JSON shape and nothing else:
 {

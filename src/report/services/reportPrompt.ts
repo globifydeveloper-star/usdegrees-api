@@ -135,20 +135,24 @@ platform. Plain English, ~9th-grade reading level. You NEVER rank, recommend, pr
 or criticize a school. You price schools and describe outcomes; families decide.
 
 This is the C1-LITE edition. You have sticker price, net price, admission, earnings,
-typical debt at completion (avg_debt) and a federal debt-to-income figure. You have NO
+typical debt at completion (avg_debt) and a debt-to-income ratio (debt_income_ratio) already
+calculated for you as avg_debt divided by program_earnings. You have NO
 funding gap, NO loan forecast, NO monthly payment / PLUS projection, NO campus-safety,
 graduation-rate, or trajectory data — never mention or invent any of those. avg_debt is a
 reported typical figure, NOT a projection you compute.
 
 HARD RULES (a violation fails the report):
-R1. Every number you write must appear character-for-character in the DATA PAYLOAD.
+R1. Every number you write must appear character-for-character in the DATA PAYLOAD, except
+    that dollar amounts are written in USD format with thousands separators — payload 54000
+    is written "$54,000". Adding commas is the ONLY change you may make to a payload number.
     Never compute, subtract, estimate, round, or infer a number. Comparative phrases
     ("$2,600 more than X") are forbidden unless that difference is itself a payload field.
 R2. If a field is null, describe it as not published — never substitute a typical value.
 R3. Never use outside knowledge about any school. Only the payload exists.
 R4. Neutral voice. No superlatives, no advice verbs ("you should choose"), no ranking
     ("best", "top pick", "we recommend"). Describe trade-offs; never select one.
-R5. Cite each figure with its vintage tag from the payload.
+R5. Cite each figure with its vintage tag from the payload — except program_earnings in
+    earnings_paragraph, which carries its method flag but no vintage year.
 R6. Banned words: premier, cutting-edge, state-of-the-art, in the heart of, foster,
     fostering, world-class, unparalleled, prestigious, elite, renowned, dedicated to.
 
@@ -186,22 +190,29 @@ WRITE ONLY THESE (lengths are ceilings):
 - two_minute_lines: exactly one per school, in payload order. Strongest cost-or-outcomes
   fact + one counterweight fact + a page reference. Both facts payload values. Never two
   positives or two negatives. Label the program_earnings figure as "Program Earnings from
-  LEHD data" (not "program earnings" and not a bare vintage year). ≤40 words each.
+  LEHD data" (not "program earnings" and not a bare vintage year). Call the cost figure
+  "Net price" — never "Sticker price", whichever payload field it came from. ≤40 words each.
 - critical_finding: name any merit-flag school, any reach-flag school, the highest
   program_earnings school with the earnings range, the cost range, and any school whose
   fit is "Not applicable". Nothing else. ≤110 words.
 - net_price_note: state cost_range_low/high and the bracket label if present. ≤90 words.
 - fit_sentences: one per school — bands if present, disclosure copy, merit/reach framing, and
   the Admission Fit Estimate disclaimer (see BRANCHES). ≤70 words each.
-- earnings_paragraph: program_earnings per school with vintage + method flag, and the
-  earnings range. No "best". ≤90 words.
+- earnings_paragraph: program_earnings per school with its method flag (e.g. user_reported)
+  and the earnings range. Do NOT state the earnings vintage year here — the figure and its
+  method flag only. No "best". ≤90 words.
 - debt_burden_paragraph: state each school's avg_debt (typical debt at completion) and its
-  debt_income_ratio with the published debt_ratio_text label, plus the debt range. Frame the
-  ratio as a reported federal figure, not the report's verdict on the school. Never describe
-  a monthly payment or loan schedule. ≤90 words.
+  debt_income_ratio, plus the debt range. debt_income_ratio is already calculated for you as
+  avg_debt divided by program_earnings — write the payload value exactly and describe it as
+  "typical debt divided by program earnings". Never recompute it yourself, and never quote
+  debt_ratio_text or any federal label. When debt_income_ratio is null, write that the ratio
+  cannot be calculated due to missing values. Never describe a monthly payment or loan
+  schedule. ≤90 words.
 - plain_english_question: neutral framing — with cost and outcomes on the table, the
   question is which cost-and-value structure the family can carry. No recommendation. ≤90 words.
 - executive_summary and analyst_note: 2–4 neutral sentences each, only facts from the payload.
+  Each entry in schools is a compared program, not a distinct institution — when stating the
+  count, say "compares N programs", never "N institutions".
 
 DATA PAYLOAD (the only source of truth):
 ${JSON.stringify(payload, null, 2)}
@@ -248,11 +259,12 @@ export const GEMINI_RESPONSE_SCHEMA = {
 // from the payload instead of failing the request. Every sentence is
 // assembled from payload fields only, so it trivially satisfies R1–R6 and
 // the acceptance gates (no invented numbers, no ranking/recommendation).
-// No thousands separators: gateNumbersTraceable requires every number to
-// appear character-for-character in JSON.stringify(payload), which never
-// inserts commas into plain numbers.
+// USD with thousands separators. gateNumbersTraceable strips commas before
+// tracing, so "$54,000" still matches the payload's bare 54000.
 function money(v: number | null): string {
-  return v != null ? `$${v}` : "not published";
+  return v != null
+    ? `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+    : "not published";
 }
 
 // The two-minute read's cost clause: personalized net price when an income
@@ -266,7 +278,9 @@ function costClause(s: C1LitePayload["schools"][number]): string {
     return `Net price ${money(s.net_price_bracket)}${s.net_price_vintage ? ` (${s.net_price_vintage})` : ""}`;
   }
   if (s.sticker_price != null) {
-    return `Sticker price ${money(s.sticker_price)}${s.sticker_vintage ? ` (${s.sticker_vintage})` : ""}`;
+    // Labelled "Net price" per the report's cost vocabulary — the underlying
+    // field name (sticker_price) is the API's, not the reader's.
+    return `Net price ${money(s.sticker_price)}${s.sticker_vintage ? ` (${s.sticker_vintage})` : ""}`;
   }
   return "Net price not published";
 }
@@ -294,17 +308,17 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
     findingParts.push(`Program earnings across the selected schools range from ${money(Number(derived_flags.earnings_range_low))} to ${money(Number(derived_flags.earnings_range_high))}.`);
   }
   if (derived_flags.cost_range_low && derived_flags.cost_range_high) {
-    findingParts.push(`Sticker Price ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.`);
+    findingParts.push(`Net Price ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.`);
   }
   const critical_finding = findingParts.length
     ? findingParts.join(" ")
     : "No merit, reach, or fit-unavailable flags apply to the selected schools; see the cost and earnings tables for figures.";
 
-  const executive_summary = `This report compares ${schools.length} institution${schools.length === 1 ? "" : "s"} for ${student.display_name} on published net price, admissions, program earnings, and typical debt — it does not rank or recommend a school. ${
+  const executive_summary = `This report compares ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} on published net price, admissions, program earnings, and typical debt — it does not rank or recommend a school. ${
     student.sat_score == null ? "No SAT score was provided, so academic fit is not shown." : "Academic fit is shown where the disclosure category allows it."
   }`;
 
-  const analyst_note = `This report evaluates ${schools.length} institution${schools.length === 1 ? "" : "s"} for ${student.display_name} using federally sourced figures; some estimated figures are based on a study of inflation for that program's earnings year and on program trends, rather than the raw dataset alone. Where a figure is not published, it is shown as "not published" rather than substituted with a typical value. This report does not rank schools or recommend one over another — the following pages lay out cost, admissions, earnings, and debt so your family can weigh the trade-offs directly. Confirm all figures with each institution before making a decision.`;
+  const analyst_note = `This report evaluates ${schools.length} programs${schools.length === 1 ? "" : "s"} for ${student.display_name} using federally sourced figures; some estimated figures are based on a study of inflation for that program's earnings year and on program trends, rather than the raw dataset alone. Where a figure is not published, it is shown as "not published" rather than substituted with a typical value. This report does not rank schools or recommend one over another — the following pages lay out cost, admissions, earnings, and debt so your family can weigh the trade-offs directly. Confirm all figures with each institution before making a decision.`;
 
   const net_price_note = student.income_bracket_label
     ? `Net price below reflects the ${student.income_bracket_label} income bracket. ${derived_flags.cost_range_low && derived_flags.cost_range_high ? `Across the selected schools it ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.` : "Figures are not published for one or more schools."}`
@@ -333,13 +347,19 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
   });
 
   const earnings_paragraph = schools
-    .map((s) => `${s.display_name}: ${money(s.program_earnings)}${s.earnings_vintage ? ` (${s.earnings_vintage}${s.earnings_method_flag ? `, ${s.earnings_method_flag}` : ""})` : ""}.`)
+    // Earnings vintage year is deliberately omitted here; only the method flag
+    // (e.g. user_reported) is surfaced next to the figure.
+    .map((s) => `${s.display_name}: ${money(s.program_earnings)}${s.earnings_method_flag ? ` (${s.earnings_method_flag})` : ""}.`)
     .join(" ") + (derived_flags.earnings_range_low && derived_flags.earnings_range_high
       ? ` Range across selected schools: ${money(Number(derived_flags.earnings_range_low))} to ${money(Number(derived_flags.earnings_range_high))}.`
       : "");
 
+  // debt_income_ratio is derived in reportPayload.service as typical debt
+  // divided by program earnings — the same value the Section 03 table shows —
+  // so the paragraph describes the calculation instead of quoting the
+  // reported federal label.
   const debt_burden_paragraph = schools
-    .map((s) => `${s.display_name}: typical debt ${money(s.avg_debt)}, debt-to-income reported as "${s.debt_ratio_text ?? "not published"}".`)
+    .map((s) => `${s.display_name}: typical debt ${money(s.avg_debt)}, debt-to-income ratio ${s.debt_income_ratio != null ? `${s.debt_income_ratio} (typical debt divided by program earnings)` : "cannot be calculated due to missing values"}.`)
     .join(" ") + (derived_flags.debt_range_low && derived_flags.debt_range_high
       ? ` Range across selected schools: ${money(Number(derived_flags.debt_range_low))} to ${money(Number(derived_flags.debt_range_high))}.`
       : "");
@@ -399,10 +419,14 @@ const BANNED = [
 ];
 const ADVICE = ["we recommend", "you should", "best choice", "top pick", "best school", "optimal choice"];
 
+// Thousands separators are a presentation choice, not a new number, so both
+// sides are compared with commas stripped: "$54,000" traces to a payload 54000.
 export function gateNumbersTraceable(n: C1LiteNarrative, payload: C1LitePayload): string[] {
   const hay = JSON.stringify(payload);
   const nums = JSON.stringify(n).match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
-  return [...new Set(nums)].filter((num) => !hay.includes(num));
+  return [...new Set(nums)].filter(
+    (num) => !hay.includes(num) && !hay.includes(num.replace(/,/g, "")),
+  );
 }
 export function gateBannedVocab(n: C1LiteNarrative): string[] {
   const blob = JSON.stringify(n).toLowerCase();

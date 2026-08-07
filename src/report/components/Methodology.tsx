@@ -21,7 +21,7 @@ export default function Methodology({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 09 · MODELS & DISCLAIMERS"
+          sectionLabel="SECTION 10 · MODELS & DISCLAIMERS"
           title="Calculation Methodology & Disclaimers"
         />
 

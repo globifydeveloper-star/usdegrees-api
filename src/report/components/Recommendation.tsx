@@ -150,7 +150,7 @@ export function RecommendationQuestion({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 04 · THE DECISION"
+          sectionLabel="SECTION 05 · THE DECISION"
           title="The Decision Ahead"
         />
 
