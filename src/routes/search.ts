@@ -42,23 +42,99 @@ function safeNum(value: unknown): number | null {
 */
 router.get("/", async (req: Request, res: Response) => {
   const { credential_title, state, title } = req.query as SearchQueryParams;
-
-  // Collected bind parameters (positional $1, $2, …)
   const params: (string | number)[] = [];
+  let whereSql = "";
 
-  // ---------------------------------------------------------------------------
-  // Base SQL
-  //
-  // JOIN strategy:
-  //  • schools       → INNER JOIN  (every program must have a school)
-  //  • admissions    → LEFT JOIN on (unitid)            — may be missing
-  //  • completion    → LEFT JOIN on (unitid + cip_code) — may be missing
-  //  • earnings…     → LEFT JOIN on (unitid + cip_code) — may be missing
-  //
-  // DISTINCT prevents duplicates when the joined tables have multiple rows
-  // per (unitid, cip_code) pair.
-  // ---------------------------------------------------------------------------
-  let sql = `
+  if (credential_title) {
+    params.push(credential_title);
+    whereSql += ` AND p.credential_title = $${params.length}`;
+  }
+
+  if (state) {
+    params.push(state);
+    whereSql += ` AND s.state = $${params.length}`;
+  }
+
+  let relevanceSelect = "0 AS relevance_score";
+  let orderByClause = "ORDER BY p.title ASC";
+
+  if (title) {
+    const trimmedTitle = title.trim();
+    if (trimmedTitle) {
+      // Strip trailing punctuation like '.' so 'Accounting and Related Services.' matches 'Accounting and Related Services'
+      const cleanTitle = trimmedTitle.replace(/[\.\s]+$/, '');
+      const lowerQuery = cleanTitle.toLowerCase();
+
+      // Common degree acronym aliases
+      const acronyms: Record<string, string> = {
+        cs: "computer science",
+        rn: "nursing",
+        mba: "business administration",
+        it: "information technology",
+        bsn: "nursing",
+        ds: "data science",
+        ee: "electrical engineering",
+        me: "mechanical engineering",
+      };
+
+      const expandedAcronym = acronyms[lowerQuery];
+
+      params.push(`%${cleanTitle}%`);
+      const titleParamIdx = params.length;
+
+      if (expandedAcronym) {
+        params.push(`%${expandedAcronym}%`);
+        const expandedParamIdx = params.length;
+        whereSql += ` AND (LOWER(p.title) LIKE LOWER($${titleParamIdx}) OR LOWER(p.title) LIKE LOWER($${expandedParamIdx}))`;
+
+        params.push(lowerQuery);
+        const rawExactIdx = params.length;
+        params.push(`${lowerQuery}%`);
+        const rawPrefixIdx = params.length;
+        params.push(`% ${lowerQuery}%`);
+        const rawWordIdx = params.length;
+
+        params.push(expandedAcronym);
+        const expExactIdx = params.length;
+        params.push(`${expandedAcronym}%`);
+        const expPrefixIdx = params.length;
+
+        relevanceSelect = `(CASE
+          WHEN LOWER(p.title) = $${rawExactIdx}::text OR LOWER(p.title) = $${expExactIdx}::text THEN 1
+          WHEN LOWER(p.title) LIKE $${rawPrefixIdx}::text OR LOWER(p.title) LIKE $${expPrefixIdx}::text THEN 2
+          WHEN LOWER(p.title) LIKE $${rawWordIdx}::text THEN 3
+          WHEN LOWER(p.title) LIKE $${titleParamIdx}::text THEN 4
+          ELSE 5
+        END) AS relevance_score`;
+        orderByClause = `ORDER BY relevance_score ASC, p.title ASC`;
+      } else {
+        whereSql += ` AND LOWER(p.title) LIKE LOWER($${titleParamIdx})`;
+
+        params.push(lowerQuery);
+        const rawExactIdx = params.length;
+        params.push(`${lowerQuery}%`);
+        const rawPrefixIdx = params.length;
+        params.push(`% ${lowerQuery}%`);
+        const rawWordIdx = params.length;
+
+        relevanceSelect = `(CASE
+          WHEN LOWER(p.title) = $${rawExactIdx}::text THEN 1
+          WHEN LOWER(p.title) LIKE $${rawPrefixIdx}::text THEN 2
+          WHEN LOWER(p.title) LIKE $${rawWordIdx}::text THEN 3
+          WHEN LOWER(p.title) LIKE $${titleParamIdx}::text THEN 4
+          ELSE 5
+        END) AS relevance_score`;
+        orderByClause = `ORDER BY relevance_score ASC, p.title ASC`;
+      }
+    }
+  }
+
+  // Parse limit & page if provided
+  const limitVal = req.query.limit ? Math.min(1000, Math.max(1, parseInt(String(req.query.limit), 10) || 1000)) : 1000;
+  const pageVal = req.query.page ? Math.max(1, parseInt(String(req.query.page), 10) || 1) : 1;
+  const offsetVal = (pageVal - 1) * limitVal;
+
+  const sql = `
   SELECT DISTINCT
     -- programs
     p.title                     AS program_title,
@@ -84,40 +160,20 @@ router.get("/", async (req: Request, res: Response) => {
     -- completion (nullable)
     co.emp_factor               AS emp_factor,
 
-    -- earnings (nullable, resolved to a single row per program key — see ec below)
+    -- earnings
     ec.year_5                   AS earnings_year_5,
     ec.year_5_method            AS earnings_year_5_method,
     ec.grad_cohort               AS earnings_year_5_cohort,
 
     -- roi (nullable)
-    roi_data.roi_20yr          AS roi_20yr
+    roi_data.roi_20yr          AS roi_20yr,
+    ${relevanceSelect}
 
   FROM programs p
 
-  /* Every program must belong to a known school */
-  JOIN schools s
-    ON p.unitid = s.unitid
-
-  /* Admission data may not exist for every school */
-  LEFT JOIN admissions ad
-    ON p.unitid = ad.unitid
-
-  /* Completion data keyed by school + program (cip_code) */
-  LEFT JOIN completion co
-    ON p.unitid = co.unitid
-
-  /* Earnings — earnings_against_courses_merged has up to one row per
-     grad_cohort for a given (unitid, cip_code, credential_level), so a plain
-     JOIN fans out into one duplicate result row per cohort (the original bug
-     here: the same program appeared once per grad_cohort, each with a
-     different year_5 value). This LATERAL resolves to exactly one row per
-     program key BEFORE it reaches the result set, using the same
-     reported → interpolated/extrapolated → low_confidence waterfall (and
-     most-recent-cohort-within-tier tiebreak) as getEarningsForProgram() in
-     earnings.service.ts, so this endpoint's figure never disagrees with
-     /outcomes for the same program.
-     earnings_against_courses_merged is the source of truth; rollback to
-     earnings_against_courses (raw, no fill-method tracking) if needed. */
+  JOIN schools s ON p.unitid = s.unitid
+  LEFT JOIN admissions ad ON p.unitid = ad.unitid
+  LEFT JOIN completion co ON p.unitid = co.unitid
   LEFT JOIN LATERAL (
     SELECT year_5, year_5_method, grad_cohort
     FROM earnings_against_courses_merged e
@@ -135,8 +191,6 @@ router.get("/", async (req: Request, res: Response) => {
       e.grad_cohort DESC
     LIMIT 1
   ) ec ON TRUE
-
-  /* ROI — exact credential_level match preferred, school-level fallback */
   LEFT JOIN LATERAL (
     SELECT roi_20yr
     FROM roi
@@ -147,35 +201,9 @@ router.get("/", async (req: Request, res: Response) => {
     END
     LIMIT 1
   ) roi_data ON TRUE
-  WHERE 1=1
-`;
-
-  // ---------------------------------------------------------------------------
-  // Dynamic filters — parameterized to prevent SQL injection
-  // ---------------------------------------------------------------------------
-
-  if (credential_title) {
-    params.push(credential_title);
-    sql += ` AND p.credential_title = $${params.length}`;
-  }
-
-  if (state) {
-    params.push(state);
-    sql += ` AND s.state = $${params.length}`;
-  }
-
-  if (title) {
-    // Wrap the value so LIKE matching works; LOWER() on both sides for
-    // case-insensitive search without requiring a case-insensitive collation.
-    params.push(`%${title}%`);
-    sql += ` AND LOWER(p.title) LIKE LOWER($${params.length})`;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Ordering & pagination
-  // Results ordered alphabetically by program title; hard-capped at 50 rows.
-  // ---------------------------------------------------------------------------
-  sql += ` ORDER BY p.title ASC LIMIT 1000`;
+  WHERE 1=1 ${whereSql}
+  ${orderByClause} LIMIT ${limitVal} OFFSET ${offsetVal}
+  `;
 
   // ---------------------------------------------------------------------------
   // Execute

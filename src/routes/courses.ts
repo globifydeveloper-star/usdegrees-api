@@ -29,9 +29,10 @@ router.get("/", async (req: Request, res: Response) => {
     sql += ` AND s.state = $${params.length}`;
   }
 
-  // sql += " LIMIT 20";
+  sql += " ORDER BY p.title ASC";
 
   try {
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
     const { rows } = await pool.query<Course>(sql, params);
     res.json(rows);
   }

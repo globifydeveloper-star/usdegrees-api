@@ -64,6 +64,8 @@ const FALLBACK_STATES: State[] = [
 
 const router = Router();
 
+let statesCache: State[] | null = null;
+
 /**
  * GET /states
  * Returns [{ id, state_code, state_title }]. Only rows with a non-empty
@@ -71,6 +73,10 @@ const router = Router();
  * undefined title/code.
  */
 router.get("/", async (_req: Request, res: Response<State[]>) => {
+  res.setHeader("Cache-Control", "public, max-age=86400, s-maxage=86400");
+  if (statesCache && statesCache.length > 0) {
+    return res.json(statesCache);
+  }
   try {
     const { rows } = await pool.query<State>(
       `SELECT id, state_code, state_title
@@ -79,13 +85,17 @@ router.get("/", async (_req: Request, res: Response<State[]>) => {
           AND state_title IS NOT NULL AND btrim(state_title) <> ''
         ORDER BY state_title`,
     );
-    res.json(rows);
+    if (rows && rows.length > 0) {
+      statesCache = rows;
+      return res.json(rows);
+    }
+    return res.json(FALLBACK_STATES);
   } catch (err) {
     console.warn(
       "[/states] DB query failed, returning fallback states:",
       (err as Error).message,
     );
-    res.json(FALLBACK_STATES);
+    return res.json(FALLBACK_STATES);
   }
 });
 

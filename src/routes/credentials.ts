@@ -4,6 +4,7 @@ const router = Router();
 
 // GET /credentials
 router.get("/", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "public, max-age=86400, s-maxage=86400");
   res.json(CREDENTIAL_LEVELS);
 });
 
