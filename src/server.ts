@@ -26,6 +26,7 @@ import degreeLevelsRoute from "./routes/degreeLevels";
 import reportRoute from "./routes/report";
 import athleticsRoute from "./routes/athletics";
 import popularCategoriesRoute from "./routes/popularCategories";
+import analyticsRoute from "./routes/analytics";
 const PORT = process.env.PORT || 8000;
 console.log("SERVER.TS EXECUTED");
 
@@ -50,6 +51,7 @@ app.use("/degree-levels", degreeLevelsRoute);
 app.use("/report", reportRoute);
 app.use("/athletics", athleticsRoute);
 app.use("/popular-categories", popularCategoriesRoute);
+app.use("/analytics", analyticsRoute);
 app.get("/", (req, res) =>
   res.json({ status: "ok", message: "API is running" }),
 );
