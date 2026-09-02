@@ -292,7 +292,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
 
   const two_minute_lines = schools.map((s) => ({
     school: s.display_name,
-    line: `${costClause(s)}; Program Earnings from LEHD data ${money(s.program_earnings)}.`,
+    line: `${costClause(s)}; Program Earnings from PSEO data ${money(s.program_earnings)}.`,
   }));
 
   const findingParts: string[] = [];
