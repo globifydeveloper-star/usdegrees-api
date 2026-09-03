@@ -14,6 +14,20 @@ import { errorDetails } from "../utils/errors";
 const router = Router();
 const APP_JWT_TTL = process.env.APP_JWT_TTL || "30m";
 
+// jwt.sign parses the TTL string at call time, so a malformed APP_JWT_TTL
+// ("half an hour", "30 secs plz") would otherwise turn every login into a 500. Sign a
+// throwaway token at module load to exercise that exact parser — no hand-rolled
+// format check to drift out of sync with jsonwebtoken's accepted formats.
+try {
+  jwt.sign({}, SECRET, { expiresIn: APP_JWT_TTL } as SignOptions);
+} catch (error) {
+  throw new Error(
+    `Invalid APP_JWT_TTL: ${JSON.stringify(APP_JWT_TTL)}. ` +
+      `Expected a jsonwebtoken duration such as "30m", "1h", or a number of seconds. ` +
+      `(${error instanceof Error ? error.message : String(error)})`,
+  );
+}
+
 const APPLE_ISSUER = "https://appleid.apple.com";
 const APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID;
 // createRemoteJWKSet caches the JWKS response internally and re-fetches

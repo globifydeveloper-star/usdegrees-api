@@ -40,6 +40,7 @@ export interface SearchResult {
 
   roi_20yr: number | null;
   tuition_in_state: number | null;
+  sticker_price_by_api: number | null;
 }
 export interface SearchQueryParams {
   credential_title?: string;

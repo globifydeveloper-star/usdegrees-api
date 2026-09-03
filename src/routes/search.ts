@@ -55,6 +55,12 @@ router.get("/", async (req: Request, res: Response) => {
     whereSql += ` AND s.state = $${params.length}`;
   }
 
+  // How many leading entries of `params` are actually referenced by
+  // `whereSql` — the title-match block below pushes extra params afterward
+  // (for the relevance ORDER BY only) that a query using just `whereSql`
+  // must not receive, or Postgres rejects the bind as a param-count mismatch.
+  let whereParamCount = params.length;
+
   let relevanceSelect = "0 AS relevance_score";
   let orderByClause = "ORDER BY p.title ASC";
 
@@ -86,6 +92,7 @@ router.get("/", async (req: Request, res: Response) => {
         params.push(`%${expandedAcronym}%`);
         const expandedParamIdx = params.length;
         whereSql += ` AND (LOWER(p.title) LIKE LOWER($${titleParamIdx}) OR LOWER(p.title) LIKE LOWER($${expandedParamIdx}))`;
+        whereParamCount = params.length;
 
         params.push(lowerQuery);
         const rawExactIdx = params.length;
@@ -109,6 +116,7 @@ router.get("/", async (req: Request, res: Response) => {
         orderByClause = `ORDER BY relevance_score ASC, p.title ASC`;
       } else {
         whereSql += ` AND LOWER(p.title) LIKE LOWER($${titleParamIdx})`;
+        whereParamCount = params.length;
 
         params.push(lowerQuery);
         const rawExactIdx = params.length;
@@ -130,6 +138,7 @@ router.get("/", async (req: Request, res: Response) => {
   }
 
   // Parse limit & page if provided
+  const isPaginatedRequest = req.query.limit != null || req.query.page != null;
   const limitVal = req.query.limit ? Math.min(1000, Math.max(1, parseInt(String(req.query.limit), 10) || 1000)) : 1000;
   const pageVal = req.query.page ? Math.max(1, parseInt(String(req.query.page), 10) || 1) : 1;
   const offsetVal = (pageVal - 1) * limitVal;
@@ -167,6 +176,11 @@ router.get("/", async (req: Request, res: Response) => {
 
     -- roi (nullable)
     roi_data.roi_20yr          AS roi_20yr,
+
+    -- cost (nullable) — single source for the search results' sticker price,
+    -- so the client never needs a separate per-school /tuition/:unitid call.
+    cost_data.tuition_in_state   AS tuition_in_state,
+    cost_data.sticker_price_by_api AS sticker_price_by_api,
     ${relevanceSelect}
 
   FROM programs p
@@ -174,6 +188,12 @@ router.get("/", async (req: Request, res: Response) => {
   JOIN schools s ON p.unitid = s.unitid
   LEFT JOIN admissions ad ON p.unitid = ad.unitid
   LEFT JOIN completion co ON p.unitid = co.unitid
+  LEFT JOIN LATERAL (
+    SELECT tuition_in_state, sticker_price_by_api
+    FROM costs
+    WHERE unitid = p.unitid
+    LIMIT 1
+  ) cost_data ON TRUE
   LEFT JOIN LATERAL (
     SELECT year_5, year_5_method, grad_cohort
     FROM earnings_against_courses_merged e
@@ -205,29 +225,62 @@ router.get("/", async (req: Request, res: Response) => {
   ${orderByClause} LIMIT ${limitVal} OFFSET ${offsetVal}
   `;
 
+  // Total number of programs matching the filters, ignoring LIMIT/OFFSET —
+  // only needed when the caller actually paginates (search page), so the
+  // frontend can compute page count. The LEFT JOIN LATERALs above are
+  // one-row-in/one-row-out (ON TRUE, LIMIT 1) so they never change row
+  // count; only programs/schools affect how many rows match.
+  const countSql = `
+  SELECT COUNT(*) AS total
+  FROM programs p
+  JOIN schools s ON p.unitid = s.unitid
+  WHERE 1=1 ${whereSql}
+  `;
+
   // ---------------------------------------------------------------------------
   // Execute
   // ---------------------------------------------------------------------------
   try {
-    const { rows } = await pool.query<SearchResult>(sql, params);
-    res.json(
-      rows.map((row) => {
-        const earningsYear5Method = normalizeEarningsFillMethod(row.earnings_year_5_method);
-        return {
-          ...row,
-          unitid: safeNum(row.unitid),
-          admission_rate: safeNum(row.admission_rate),
-          school_min_range: safeNum(row.school_min_range),
-          school_max_range: safeNum(row.school_max_range),
-          emp_factor: safeNum(row.emp_factor),
-          earnings_year_5: safeNum(row.earnings_year_5),
-          earnings_year_5_method: earningsYear5Method,
-          earnings_year_5_cohort: row.earnings_year_5_cohort ?? null,
-          earnings_year_5_basis_is_estimated: earningsYear5Method !== "user_reported",
-          roi_20yr: safeNum(row.roi_20yr),
-        };
-      })
-    );
+    const [{ rows }, countRows] = await Promise.all([
+      pool.query<SearchResult>(sql, params),
+      isPaginatedRequest
+        ? pool
+            .query<{ total: string }>(countSql, params.slice(0, whereParamCount))
+            .then((r) => r.rows)
+        : Promise.resolve(null),
+    ]);
+
+    const shapedResults = rows.map((row) => {
+      const earningsYear5Method = normalizeEarningsFillMethod(row.earnings_year_5_method);
+      return {
+        ...row,
+        unitid: safeNum(row.unitid),
+        admission_rate: safeNum(row.admission_rate),
+        school_min_range: safeNum(row.school_min_range),
+        school_max_range: safeNum(row.school_max_range),
+        emp_factor: safeNum(row.emp_factor),
+        earnings_year_5: safeNum(row.earnings_year_5),
+        earnings_year_5_method: earningsYear5Method,
+        earnings_year_5_cohort: row.earnings_year_5_cohort ?? null,
+        earnings_year_5_basis_is_estimated: earningsYear5Method !== "user_reported",
+        roi_20yr: safeNum(row.roi_20yr),
+        tuition_in_state: safeNum(row.tuition_in_state),
+        sticker_price_by_api: safeNum(row.sticker_price_by_api),
+      };
+    });
+
+    // Non-paginated callers (accreditor lookups, sitemap, compare-page
+    // pickers, etc.) keep receiving the plain array they've always gotten.
+    // Only the paginated search page needs — and gets — the total count.
+    if (!isPaginatedRequest) {
+      res.json(shapedResults);
+      return;
+    }
+
+    res.json({
+      results: shapedResults,
+      total: safeNum(countRows?.[0]?.total) ?? 0,
+    });
   } catch (err) {
     console.error("[/search] Query error:", (err as Error).message);
     res.status(500).json({
