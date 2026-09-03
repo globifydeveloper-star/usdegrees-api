@@ -319,7 +319,7 @@ export default function Athletics({
                       paddingTop: "8px",
                     }}
                   >
-                    {a.divisionBenchmark.division} division average: {num(a.divisionBenchmark.avgAthletesTotal)} athletes, {money(a.divisionBenchmark.avgAidPerAthlete)} aid/athlete
+                    {a.divisionBenchmark.division} division average: {num(a.divisionBenchmark.avgAthletesTotal)} athletes, {money(a.divisionBenchmark.avgAidPerAthlete)} aid/athlete - computed
                   </div>
                 )}
               </div>
