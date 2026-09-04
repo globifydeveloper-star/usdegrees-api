@@ -250,10 +250,21 @@ router.post(
  * of the Firebase-based /auth/login flow — and mints the same kind of app JWT.
  *
  * Body:   { id_token: string }   (Apple identity token from Sign in with Apple)
- * Returns: { token: string, user: UserProfile }
+ * Returns: { token: string, firebaseToken: string, user: UserProfile }
  *
  * Unlike /auth/login this returns the full user object inline, since there's
  * no separate Firebase-driven /auth/me sync call in the Apple flow.
+ *
+ * `firebaseToken` is a Firebase custom token (uid = appleUid) minted in
+ * addition to the app JWT. The Google/Microsoft/email flow gets its "stay
+ * logged in across a refresh" behavior for free from the Firebase client SDK's
+ * persisted session (established via signInWithPopup/signInWithCredential
+ * *before* the frontend ever calls this API). Sign in with Apple never goes
+ * through the Firebase client SDK, so without this token Apple users have no
+ * persisted session for the frontend to restore on reload — only a bare
+ * short-lived app JWT that silently expires. The frontend must call
+ * `signInWithCustomToken(firebaseToken)` right after this request so Apple
+ * users get the same persisted Firebase session everyone else gets.
  */
 router.post(
   "/apple",
@@ -261,10 +272,12 @@ router.post(
   async (
     req: Request<
       {},
-      { token: string; user: UserProfile } | ApiError,
+      { token: string; firebaseToken: string; user: UserProfile } | ApiError,
       { id_token?: string; full_name?: string }
     >,
-    res: Response<{ token: string; user: UserProfile } | ApiError>,
+    res: Response<
+      { token: string; firebaseToken: string; user: UserProfile } | ApiError
+    >,
   ) => {
     try {
       const idToken = req.body?.id_token;
@@ -372,7 +385,25 @@ router.post(
         expiresIn: APP_JWT_TTL,
       } as SignOptions);
 
-      return res.json({ token, user: toProfile(user) });
+      // Mint a Firebase custom token for the same uid so the frontend can
+      // establish a real Firebase client session (see JSDoc above) — that's
+      // what makes the login survive a page refresh, same as every other
+      // provider.
+      let firebaseToken: string;
+      try {
+        firebaseToken = await firebaseAuth.createCustomToken(appleUid);
+      } catch (err) {
+        console.error(
+          "[auth/apple] 500 — createCustomToken failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+        return res.status(500).json({
+          error: "Apple sign-in failed",
+          details: errorDetails(err),
+        });
+      }
+
+      return res.json({ token, firebaseToken, user: toProfile(user) });
     } catch (error) {
       console.error("[auth/apple] 500 — unexpected error:", error);
       return res.status(500).json({
