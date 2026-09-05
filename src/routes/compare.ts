@@ -944,11 +944,21 @@ router.post(
  * DELETE /compare/matrix/entry/:unitid
  * Removes EVERY compare-matrix entry for that college (used by surfaces
  * that don't track a specific program). Response: the full updated matrix.
+ *
+ * Optional ?details=true: instead of the bare matrix, responds with the
+ * same remaining rows enriched exactly like GET /compare/matrix/details,
+ * each nested under a `details` key (row order matches compare_matrix_entries
+ * id ASC, same as /matrix/details).
  */
 router.delete(
   "/matrix/entry/:unitid",
   verifyToken,
-  async (req: AuthRequest, res: Response<MatrixEntry[] | ApiErrorBody>) => {
+  async (
+    req: AuthRequest,
+    res: Response<
+      MatrixEntry[] | (MatrixEntry & { details: SelectedItem })[] | ApiErrorBody
+    >,
+  ) => {
     try {
       const unitid = toNum(req.params.unitid);
       if (unitid === null || !Number.isInteger(unitid) || unitid <= 0) {
@@ -965,6 +975,9 @@ router.delete(
         [userId, unitid],
       );
 
+      if (toStr(req.query.details) === "true") {
+        return res.json(await getMatrixEnrichedRows(userId));
+      }
       return res.json(await fetchMatrixEntries(userId));
     } catch (error) {
       console.error("Remove compare matrix entries error:", error);
@@ -980,11 +993,18 @@ router.delete(
  * DELETE /compare/matrix/entry/:unitid/:cipCode/:credentialLevel
  * Removes one specific program entry (used by the compare page's own
  * per-program remove). Response: the full updated matrix.
+ *
+ * Optional ?details=true: same enrichment as above.
  */
 router.delete(
   "/matrix/entry/:unitid/:cipCode/:credentialLevel",
   verifyToken,
-  async (req: AuthRequest, res: Response<MatrixEntry[] | ApiErrorBody>) => {
+  async (
+    req: AuthRequest,
+    res: Response<
+      MatrixEntry[] | (MatrixEntry & { details: SelectedItem })[] | ApiErrorBody
+    >,
+  ) => {
     try {
       const unitid = toNum(req.params.unitid);
       if (unitid === null || !Number.isInteger(unitid) || unitid <= 0) {
@@ -1006,6 +1026,9 @@ router.delete(
         [userId, unitid, cipCode, credentialLevel],
       );
 
+      if (toStr(req.query.details) === "true") {
+        return res.json(await getMatrixEnrichedRows(userId));
+      }
       return res.json(await fetchMatrixEntries(userId));
     } catch (error) {
       console.error("Remove compare matrix entry error:", error);
@@ -1026,16 +1049,22 @@ router.delete(
  * selectedProgram from its OWN cip_code/credential_level, so every row's
  * program is resolved in one call — no per-program round trip needed.
  */
-async function getMatrixEnriched(userId: string): Promise<SelectedItem[]> {
+async function getMatrixEnrichedRows(
+  userId: string,
+): Promise<(MatrixEntry & { details: SelectedItem })[]> {
   const { rows } = await pool.query(
     `WITH entries AS (
-        SELECT id, unitid, cip_code, credential_level, created_at
+        SELECT id, unitid, cip_code, credential_level, program_name, credential_title, created_at
           FROM compare_matrix_entries
          WHERE user_id = $1
          ORDER BY id ASC
      )
      SELECT
         entries.unitid          AS unitid,
+        entries.cip_code        AS entry_cip_code,
+        entries.credential_level AS entry_credential_level,
+        entries.program_name    AS entry_program_name,
+        entries.credential_title AS entry_credential_title,
         entries.created_at      AS added_at,
         s.name                 AS name,
         s.city                 AS city,
@@ -1238,7 +1267,7 @@ async function getMatrixEnriched(userId: string): Promise<SelectedItem[]> {
             .avg_salary
         : null;
 
-    return {
+    const details: SelectedItem = {
       unitid: toNum(row.unitid),
       name: row.name ?? null,
       location: toLocation(row.city, row.state),
@@ -1287,9 +1316,24 @@ async function getMatrixEnriched(userId: string): Promise<SelectedItem[]> {
           : null,
       },
     };
+
+    return {
+      unitid: toNum(row.unitid) ?? 0,
+      cipCode: row.entry_cip_code,
+      credentialLevel: row.entry_credential_level,
+      programName: row.entry_program_name,
+      credentialTitle: row.entry_credential_title,
+      details,
+    };
   });
 
   return Promise.all(items);
+}
+
+/** Enriched compare-matrix rows in the SelectedItem shape (used by GET /matrix/details). */
+async function getMatrixEnriched(userId: string): Promise<SelectedItem[]> {
+  const rows = await getMatrixEnrichedRows(userId);
+  return rows.map((r) => r.details);
 }
 
 /**

@@ -11,7 +11,6 @@
  */
 
 import { Router, Request, Response } from "express";
-import { QueryResult } from "pg";
 import pool from "../db/client";
 import {
   ApiError,
@@ -208,7 +207,23 @@ const CAMPUS_STUDENTS_QUERY = `
 const router = Router();
 
 /**
- * GET /campus-students/:unitid
+ * Fetch + shape campus/student data for a single unitid, reused by both
+ * GET /campus/:unitid and GET /college-summary/:unitid so the two
+ * endpoints never drift on query or shaping logic.
+ * Returns null when no student record exists for this unitid.
+ */
+export async function getCampusData(
+  unitid: number,
+): Promise<CampusStudentsResponse | null> {
+  const result = await pool.query<StudentRawRow>(CAMPUS_STUDENTS_QUERY, [
+    unitid,
+  ]);
+  if (result.rowCount === 0) return null;
+  return shapeResponse(unitid, result.rows[0]);
+}
+
+/**
+ * GET /campus/:unitid
  *
  * Path params:
  *   unitid  — integer college identifier (College Scorecard / IPEDS)
@@ -235,9 +250,9 @@ router.get(
     }
 
     // ── 2. Query ───────────────────────────────────────────────
-    let result: QueryResult<StudentRawRow>;
+    let payload: CampusStudentsResponse | null;
     try {
-      result = await pool.query<StudentRawRow>(CAMPUS_STUDENTS_QUERY, [unitid]);
+      payload = await getCampusData(unitid);
     } catch (dbErr: unknown) {
       console.error("[campus-students] DB error for unitid=%d:", unitid, dbErr);
       const err: ApiError = {
@@ -249,7 +264,7 @@ router.get(
     }
 
     // ── 3. 404 guard ───────────────────────────────────────────
-    if (result.rowCount === 0) {
+    if (payload === null) {
       const err: ApiError = {
         error: "NOT_FOUND",
         message: `No campus/student data found for unitid ${unitid}.`,
@@ -258,8 +273,7 @@ router.get(
       return res.status(404).json(err);
     }
 
-    // ── 4. Shape & return ──────────────────────────────────────
-    const payload = shapeResponse(unitid, result.rows[0]);
+    // ── 4. Return ──────────────────────────────────────────────
     return res.status(200).json(payload);
   },
 );

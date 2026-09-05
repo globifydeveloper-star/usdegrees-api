@@ -15,7 +15,6 @@
  */
 
 import { Router, Request, Response } from "express";
-import { QueryResult } from "pg";
 import pool from "../db/client";
 import { ApiError, TuitionRawRow, TuitionResponse } from "../types/tuition";
 
@@ -229,6 +228,20 @@ const TUITION_QUERY = `
 const router = Router();
 
 /**
+ * Fetch + shape tuition data for a single unitid, reused by both
+ * GET /tuition/:unitid and GET /college-summary/:unitid so the two
+ * endpoints never drift on query or shaping logic.
+ * Returns null when no cost record exists for this unitid.
+ */
+export async function getTuitionData(
+  unitid: number,
+): Promise<TuitionResponse | null> {
+  const result = await pool.query<TuitionRawRow>(TUITION_QUERY, [unitid]);
+  if (result.rowCount === 0) return null;
+  return shapeResponse(unitid, result.rows[0]);
+}
+
+/**
  * GET /tuition/:unitid
  *
  * Path params:
@@ -256,9 +269,9 @@ router.get(
     }
 
     // ── 2. Query ───────────────────────────────────────────────
-    let result: QueryResult<TuitionRawRow>;
+    let payload: TuitionResponse | null;
     try {
-      result = await pool.query<TuitionRawRow>(TUITION_QUERY, [unitid]);
+      payload = await getTuitionData(unitid);
     } catch (dbErr: unknown) {
       console.error("[tuition] DB error for unitid=%d:", unitid, dbErr);
       const err: ApiError = {
@@ -270,7 +283,7 @@ router.get(
     }
 
     // ── 3. 404 guard ───────────────────────────────────────────
-    if (result.rowCount === 0) {
+    if (payload === null) {
       const err: ApiError = {
         error: "NOT_FOUND",
         message: `No tuition data found for unitid ${unitid}.`,
@@ -279,8 +292,7 @@ router.get(
       return res.status(404).json(err);
     }
 
-    // ── 4. Shape & return ──────────────────────────────────────
-    const payload = shapeResponse(unitid, result.rows[0]);
+    // ── 4. Return ──────────────────────────────────────────────
     return res.status(200).json(payload);
   },
 );
