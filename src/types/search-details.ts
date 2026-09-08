@@ -41,6 +41,10 @@ export interface SearchResult {
   roi_20yr: number | null;
   tuition_in_state: number | null;
   sticker_price_by_api: number | null;
+  booksupply: number | null;
+  roomboard_oncampus: number | null;
+  otherexpense_oncampus: number | null;
+  sticker_price: number | null;
 }
 export interface SearchQueryParams {
   credential_title?: string;

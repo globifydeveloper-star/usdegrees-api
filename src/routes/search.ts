@@ -181,6 +181,10 @@ router.get("/", async (req: Request, res: Response) => {
     -- so the client never needs a separate per-school /tuition/:unitid call.
     cost_data.tuition_in_state   AS tuition_in_state,
     cost_data.sticker_price_by_api AS sticker_price_by_api,
+    cost_data.booksupply         AS booksupply,
+    cost_data.roomboard_oncampus AS roomboard_oncampus,
+    cost_data.otherexpense_oncampus AS otherexpense_oncampus,
+    (cost_data.tuition_in_state + cost_data.booksupply + cost_data.roomboard_oncampus + cost_data.otherexpense_oncampus) AS sticker_price,
     ${relevanceSelect}
 
   FROM programs p
@@ -189,7 +193,7 @@ router.get("/", async (req: Request, res: Response) => {
   LEFT JOIN admissions ad ON p.unitid = ad.unitid
   LEFT JOIN completion co ON p.unitid = co.unitid
   LEFT JOIN LATERAL (
-    SELECT tuition_in_state, sticker_price_by_api
+    SELECT tuition_in_state, sticker_price_by_api, booksupply, roomboard_oncampus, otherexpense_oncampus
     FROM costs
     WHERE unitid = p.unitid
     LIMIT 1
@@ -266,6 +270,10 @@ router.get("/", async (req: Request, res: Response) => {
         roi_20yr: safeNum(row.roi_20yr),
         tuition_in_state: safeNum(row.tuition_in_state),
         sticker_price_by_api: safeNum(row.sticker_price_by_api),
+        booksupply: safeNum(row.booksupply),
+        roomboard_oncampus: safeNum(row.roomboard_oncampus),
+        otherexpense_oncampus: safeNum(row.otherexpense_oncampus),
+        sticker_price: safeNum(row.sticker_price),
       };
     });
 
