@@ -21,6 +21,7 @@ import { reportGenerationRateLimit } from "../middleware/rateLimit";
 import { AuthRequest } from "../types/user";
 import pool from "../db/client";
 import { errorDetails } from "../utils/errors";
+import { sendReportDownloadEmail } from "../utils/mailer";
 
 const router = Router();
 
@@ -58,6 +59,14 @@ async function resolveUserId(firebaseUid: string): Promise<number | null> {
     [firebaseUid],
   );
   return r.rows.length ? r.rows[0].id : null;
+}
+
+async function getUserEmail(userId: number): Promise<string | null> {
+  const r = await pool.query<{ email: string }>(
+    "SELECT email FROM usdusers WHERE id = $1",
+    [userId],
+  );
+  return r.rows.length ? r.rows[0].email : null;
 }
 
 // Report generation triggers a real Gemini API call and a headless-Chrome PDF
@@ -323,6 +332,68 @@ router.get(
       console.error("Error fetching report:", error);
       return res.status(500).json({
         error: "Failed to fetch report",
+        details: errorDetails(error),
+      });
+    }
+  },
+);
+
+/**
+ * POST /report/:reportId/email — emails the authenticated user a fresh signed
+ * download link for their own report. Reuses the same ownership check and
+ * link-signing logic as GET /report/:reportId; ownership mismatches 404 for
+ * the same reason (a probing request can't distinguish "not yours" from
+ * "doesn't exist").
+ */
+router.post(
+  "/:reportId/email",
+  verifyToken,
+  async (req: AuthRequest, res: Response<Record<string, never> | ApiError>) => {
+    try {
+      const firebaseUid = req.userId;
+      if (!firebaseUid) {
+        return res
+          .status(401)
+          .json({
+            error: "Unauthorized: Missing user authentication context.",
+          });
+      }
+      const userId = await resolveUserId(firebaseUid);
+      if (!userId) {
+        return res.status(404).json({ error: "User not found." });
+      }
+
+      const reportId = toParamString(req.params.reportId);
+      const report = await getReportForUser(userId, reportId);
+      if (!report) {
+        return res.status(404).json({ error: "Report not found." });
+      }
+
+      const email = await getUserEmail(userId);
+      if (!email) {
+        return res.status(404).json({ error: "User not found." });
+      }
+
+      // Signed fresh at send time — the link is only valid ~10-15 minutes,
+      // so any previously-issued token could already be stale.
+      const { token } = signReportDownloadToken(report.reportId);
+      const host = req.get("host") || "localhost:8000";
+      const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+      const downloadUrl = `${proto}://${host}/report/${report.reportId}/download?token=${token}`;
+
+      await sendReportDownloadEmail({
+        to: email,
+        reportId: report.reportId,
+        createdAt: report.createdAt,
+        collegeNames: report.colleges.map((c) => c.name),
+        downloadUrl,
+      });
+
+      return res.status(200).json({});
+    } catch (error) {
+      console.error("Error emailing report:", error);
+      return res.status(500).json({
+        error: "Failed to email report",
         details: errorDetails(error),
       });
     }
